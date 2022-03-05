@@ -48,7 +48,7 @@ head(t.test)
 The result looks as follows:
 ```{r, echo=FALSE, results="asis"}
 library(knitr)
-kable(head(t.test))
+# kable(head(t.test))
 ```
 
 ```{r message=FALSE}

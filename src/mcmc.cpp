@@ -3,7 +3,7 @@
 #include "mcmc.h"
 
 namespace mcmc {
-    Graph::Graph(vector<double> nodes, vector <vector<unsigned>> edges, bool fixed_size)
+    Graph::Graph(vector<double> nodes, vector <vector<Edge> > edges, bool fixed_size)
             : fixed_size(fixed_size), order(nodes.size()), nodes(nodes), edges(edges), inner(order), outer(order),
               in_nei_c(order, 0), neis(order),
               bfsUsed(nodes.size(), {0, 0}) {
@@ -13,7 +13,7 @@ namespace mcmc {
         bfsQueue.reserve(nodes.size());
     }
 
-    Graph::Graph(Rcpp::NumericVector nodes, vector <vector<unsigned>> edges, bool fixed_size)
+    Graph::Graph(Rcpp::NumericVector nodes, vector <vector<Edge>> edges, bool fixed_size)
             : Graph(vector<double>(nodes.begin(), nodes.end()), edges, fixed_size) {}
 
     void Graph::set_nodes(Rcpp::NumericVector nodes) {
@@ -24,18 +24,20 @@ namespace mcmc {
         if (size == 0) {
             return vector<unsigned>();
         }
-        unordered_set<unsigned> sg;
+        unordered_set<size_t> sg;
         HSA candidates(order);
         size_t ind = uniform_int_distribution<>(0, order - 1)(gen);
         sg.insert(ind);
-        for (unsigned cand_node : edges[ind]) {
+        for (auto edge : edges[ind]) {
+            size_t cand_node = edge.to;
             if (sg.count(cand_node) < 1)
                 candidates.insert(cand_node);
         }
         while (sg.size() != size) {
             ind = uniform_int_distribution<>(0, candidates.size() - 1)(gen);
             unsigned new_node = candidates.get(ind);
-            for (unsigned neigbour : edges[new_node]) {
+            for (auto edge : edges[new_node]) {
+                size_t neigbour = edge.to;
                 if (!candidates.contains(neigbour)) {
                     if (sg.count(neigbour) < 1) {
                         candidates.insert(neigbour);
@@ -60,7 +62,8 @@ namespace mcmc {
         }
         for (size_t i = 0; i < inner.size(); ++i) {
             unsigned v = inner.get(i);
-            for (unsigned neighbour : edges[v]) {
+            for (auto edge : edges[v]) {
+                size_t neighbour = edge.to;
                 in_nei_c[neighbour]++;
                 if (inner.contains(neighbour)) {
                     if (v < neighbour) {
@@ -130,14 +133,16 @@ namespace mcmc {
     void Graph::update_outer_nodes(unsigned cand_in, unsigned cand_out) {
         outer.swap(cand_out, cand_in);
 
-        for (unsigned neighbour : edges[cand_out]) {
+        for (auto edge : edges[cand_out]) {
+            size_t neighbour = edge.to;
             if (in_nei_c[neighbour]++ == 0 && neighbour != cand_in) {
                 if (!inner.contains(neighbour)) {
                     outer.insert(neighbour);
                 }
             }
         }
-        for (unsigned neighbour : edges[cand_in]) {
+        for (auto edge : edges[cand_in]) {
+            size_t neighbour = edge.to;
             if (--in_nei_c[neighbour] == 0 && neighbour != cand_out) {
                 if (!inner.contains(neighbour)) {
                     outer.erase(neighbour);
@@ -160,7 +165,8 @@ namespace mcmc {
             neis[v].clear();
         } else {
             inner.insert(v);
-            for (unsigned v2 : edges[v]) {
+            for (auto edge : edges[v]) {
+                size_t v2 = edge.to;
                 if (inner.contains(v2)) {
                     neis[v].emplace_back(v2, neis[v2].size());
                     neis[v2].emplace_back(v, neis[v].size() - 1);
@@ -173,7 +179,8 @@ namespace mcmc {
         if (is_erased) {
             if (inner.size() != 0)
                 outer.insert(v);
-            for (unsigned neighbour : edges[v]) {
+            for (auto edge : edges[v]) {
+                size_t neighbour = edge.to;
                 if (--in_nei_c[neighbour] == 0) {
                     if (!inner.contains(neighbour)) {
                         outer.erase(neighbour);
@@ -183,7 +190,8 @@ namespace mcmc {
         } else {
             if (inner.size() != 1)
                 outer.erase(v);
-            for (unsigned neighbour : edges[v]) {
+            for (auto edge : edges[v]) {
+                size_t neighbour = edge.to;
                 if (in_nei_c[neighbour]++ == 0) {
                     if (!inner.contains(neighbour)) {
                         outer.insert(neighbour);
@@ -211,13 +219,13 @@ namespace mcmc {
             } else {
                 new_size_outer = outer.size();
                 for (auto x : edges[cand_in]) {
-                    if (!--in_nei_c[x]) --new_size_outer;
+                    if (!--in_nei_c[x.to]) --new_size_outer;
                 }
                 for (auto x : edges[cand_out]) {
-                    if (!in_nei_c[x]) ++new_size_outer;
+                    if (!in_nei_c[x.to]) ++new_size_outer;
                 }
                 for (auto x : edges[cand_in]) {
-                    ++in_nei_c[x];
+                    ++in_nei_c[x.to];
                 }
             }
             double p = (nodes[cand_out] * cur_size_outer) / (nodes[cand_in] * new_size_outer);

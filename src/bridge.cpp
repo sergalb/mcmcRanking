@@ -9,7 +9,7 @@ using namespace std;
 using mcmc::Graph;
 
 // [[Rcpp::export]]
-LogicalVector sample_subgraph_internal(IntegerMatrix edgelist, int gorder, int module_size, size_t niter) {
+LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gorder, int module_size, size_t niter) {
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
@@ -29,45 +29,46 @@ LogicalVector sample_subgraph_internal(IntegerMatrix edgelist, int gorder, int m
         pb.tick(niter % 10000);
     LogicalVector ret(gorder, false);
     for (size_t x : g.get_inner_nodes()) {
-        ret[x] = true;
+       ret[x] = true;
     }
     return ret;
 }
 
 // [[Rcpp::export]]
-NumericVector sample_llh_internal(IntegerMatrix edgelist, NumericVector likelihood, size_t niter, bool fixed_size,
+NumericVector sample_llh_internal(List edgelist, DataFrame signals, NumericVector likelihood, size_t niter, bool fixed_size,
                                   LogicalMatrix start_module) {
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
-    Graph g = Graph(likelihood, adj_list(edgelist, likelihood.size()), fixed_size);
-    vector<unsigned> module;
-    for (int j = 0; j < start_module.ncol(); ++j) {
-        if (start_module(0, j)) {
-            module.push_back(j);
-        }
-    }
-    g.initialize_module(module);
+    auto e = adj_list(edgelist, 1);
+    // Graph g = Graph(likelihood, adj_list(edgelist, likelihood.size()), fixed_size);
+    // vector<unsigned> module;
+    // for (int j = 0; j < start_module.ncol(); ++j) {
+    //     if (start_module(0, j)) {
+    //         module.push_back(j);
+    //     }
+    // }
+    // g.initialize_module(module);
     NumericVector llhs(niter, 0);
-    for (size_t i = 0; i < niter; ++i) {
-        g.next_iteration();
-        if (i % 10000 == 9999) {
-            Rcpp::checkUserInterrupt();
-            pb.tick(10000);
-        }
-        for (size_t x : g.get_inner_nodes()) {
-            llhs[i] += log(likelihood[x]);
-        }
-    }
+    // for (size_t i = 0; i < niter; ++i) {
+    //     g.next_iteration();
+    //     if (i % 10000 == 9999) {
+    //         Rcpp::checkUserInterrupt();
+    //         pb.tick(10000);
+    //     }
+    //     for (size_t x : g.get_inner_nodes()) {
+    //         llhs[i] += log(likelihood[x]);
+    //     }
+    // }
     if (niter > 0)
         pb.tick(niter % 10000);
     return llhs;
 }
 
 // [[Rcpp::export]]
-LogicalMatrix mcmc_sample_internal(IntegerMatrix edgelist, NumericMatrix likelihood, bool fixed_size, size_t niter,
+LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatrix likelihood, bool fixed_size, size_t niter,
                                    LogicalMatrix start_module) {
     Graph g = Graph((NumericVector) likelihood(_, 0), adj_list(edgelist, likelihood.nrow()), fixed_size);
     size_t order = likelihood.nrow();
@@ -111,7 +112,7 @@ LogicalMatrix mcmc_sample_internal(IntegerMatrix edgelist, NumericMatrix likelih
 
 // [[Rcpp::export]]
 LogicalMatrix
-mcmc_onelong_internal(IntegerMatrix edgelist, NumericVector likelihood, bool fixed_size, int module_size, size_t start,
+mcmc_onelong_internal(List edgelist, DataFrame signals, NumericVector likelihood, bool fixed_size, int module_size, size_t start,
                       size_t niter) {
     RProgress::RProgress pb;
     if (niter > 0) {
@@ -145,7 +146,7 @@ mcmc_onelong_internal(IntegerMatrix edgelist, NumericVector likelihood, bool fix
 
 // [[Rcpp::export]]
 IntegerVector
-mcmc_onelong_frequency_internal(IntegerMatrix edgelist, NumericVector likelihood, bool fixed_size, int module_size,
+mcmc_onelong_frequency_internal(List edgelist, DataFrame signals, NumericVector likelihood, bool fixed_size, int module_size,
                                 size_t start, size_t niter) {
     RProgress::RProgress pb;
     if (niter > 0) {

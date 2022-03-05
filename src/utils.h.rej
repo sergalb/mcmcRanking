@@ -1,0 +1,10 @@
+diff a/src/utils.h b/src/utils.h	(rejected hunks)
+@@ -17,7 +18,7 @@ using namespace std;
+  */
+ vector<vector<mcmc::Edge>> adj_list(List edgelist, size_t gorder);
+ 
+-vector<vector<unsigned>> adj_list(int edgelist, size_t gorder);
++vector<vector<unsigned>> adj_list(IntegerMatrix edgelist, size_t gorder);
+ 
+ 
+ #endif

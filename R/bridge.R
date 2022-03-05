@@ -11,7 +11,7 @@ mcmc <- function(mat, fixed_order) {
     stop("mat must be a boolean matrix.")
   if (is.null(colnames(mat)))
     stop("mat must contain column names.")
-  if(!is.logical(fixed_order) && length(fixed_order) == 1)
+  if (!is.logical(fixed_order) && length(fixed_order) == 1)
     stop("fixed_order must be a boolean scalar.")
   structure(list(mat = mat, fixed_order = fixed_order), class = "MCMC")
 }
@@ -33,7 +33,6 @@ check_arguments <- function(graph, subgraph_order, niter) {
 }
 
 
-
 #' Sample a connected subgraph from an uniform distribution.
 #'
 #' Generates a connected subgraph from an uniform distribution using Markov
@@ -52,11 +51,11 @@ check_arguments <- function(graph, subgraph_order, niter) {
 sample_subgraph <- function(graph, subgraph_order, niter) {
   check_arguments(graph, subgraph_order, niter)
   edgelist <- as_edgelist(graph, names = FALSE) - 1
-  res <-
-    sample_subgraph_internal(edgelist, gorder(graph), subgraph_order, niter)
+  edgelist <- cbind(edgelist, E(gs)$signal)
+  edgelist <- apply(edgelist, 1, as.list)
+  res <- sample_subgraph_internal(edgelist, graph$signals, gorder(graph), subgraph_order, niter)
   return(V(graph)$name[which(res)])
 }
-
 
 
 #' Sample log-likelihood values during one run.
@@ -85,19 +84,21 @@ sample_llh <-
     subgraph_order <- ifelse(missing(subgraph_order), 0, subgraph_order)
     check_arguments(graph, subgraph_order, niter)
     edgelist <- as_edgelist(graph, names = FALSE) - 1
+    edgelist <- cbind(edgelist, E(graph)$signal)
+    edgelist <- apply(edgelist, 1, as.list)
 
     start_module <-
-      t(sample_subgraph_internal(edgelist, gorder(graph), subgraph_order, 1))
+      t(sample_subgraph_internal(edgelist, graph$signals, gorder(graph), subgraph_order, 1))
 
     llhs <-
       sample_llh_internal(edgelist,
-                          V(graph)$likelihood ^ exp_lh,
+                          graph$signals,
+                          V(graph)$likelihood^exp_lh,
                           niter,
                           fixed_order,
                           start_module)
     return(setNames(llhs, seq_len(niter)))
   }
-
 
 
 #' Sample connected subgraphs by likelihood value.
@@ -133,6 +134,7 @@ mcmc_sample <-
       stop("Only one of the arguments times or previous_mcmc must be specified.")
     }
     edgelist <- as_edgelist(graph, names = FALSE) - 1
+    edgelist <- cbind(edgelist, E(graph)$signal)
     if (!missing(previous_mcmc)) {
       if (class(previous_mcmc) != "MCMC")
         stop("previous_mcmc must be class of \"MCMC\".")
@@ -153,7 +155,6 @@ mcmc_sample <-
                                 start_module)
     return(mcmc(ret, fixed_order))
   }
-
 
 
 #' Sample connected subgraphs by likelihood value during one long MCMC run.
@@ -183,6 +184,7 @@ mcmc_onelong <-
     subgraph_order <- ifelse(missing(subgraph_order), 0, subgraph_order)
     check_arguments(graph, subgraph_order, niter)
     edgelist <- as_edgelist(graph, names = FALSE) - 1
+    edgelist <- cbind(edgelist, E(graph)$signal)
     ret <- mcmc(
       mcmc_onelong_internal(
         edgelist,
@@ -222,6 +224,7 @@ mcmc_onelong_frequency <-
     subgraph_order <- ifelse(missing(subgraph_order), 0, subgraph_order)
     check_arguments(graph, subgraph_order, niter)
     edgelist <- as_edgelist(graph, names = FALSE) - 1
+    edgelist <- cbind(edgelist, E(graph)$signal)
     res <-
       mcmc_onelong_frequency_internal(edgelist,
                                       setNames(V(graph)$likelihood, V(graph)$name),
@@ -231,3 +234,8 @@ mcmc_onelong_frequency <-
                                       niter)
     return(res)
   }
+
+preparePval <- function(graph) {
+  V(graph)$likelihood <- 1
+
+}
