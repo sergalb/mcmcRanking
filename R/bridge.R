@@ -51,9 +51,9 @@ check_arguments <- function(graph, subgraph_order, niter) {
 sample_subgraph <- function(graph, subgraph_order, niter) {
   check_arguments(graph, subgraph_order, niter)
   edgelist <- as_edgelist(graph, names = FALSE) - 1
-  edgelist <- cbind(edgelist, E(gs)$signal)
+  edgelist <- cbind(edgelist, E(graph)$signal)
   edgelist <- apply(edgelist, 1, as.list)
-  res <- sample_subgraph_internal(edgelist, graph$signals, gorder(graph), subgraph_order, niter)
+  res <- sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, niter) # nolint
   return(V(graph)$name[which(res)])
 }
 
@@ -88,11 +88,11 @@ sample_llh <-
     edgelist <- apply(edgelist, 1, as.list)
 
     start_module <-
-      t(sample_subgraph_internal(edgelist, graph$signals, gorder(graph), subgraph_order, 1))
+      t(sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, 1))
 
     llhs <-
       sample_llh_internal(edgelist,
-                          graph$signals,
+                          getSignals(graph),
                           V(graph)$likelihood^exp_lh,
                           niter,
                           fixed_order,
@@ -135,6 +135,7 @@ mcmc_sample <-
     }
     edgelist <- as_edgelist(graph, names = FALSE) - 1
     edgelist <- cbind(edgelist, E(graph)$signal)
+    edgelist <- apply(edgelist, 1, as.list)
     if (!missing(previous_mcmc)) {
       if (class(previous_mcmc) != "MCMC")
         stop("previous_mcmc must be class of \"MCMC\".")
@@ -144,11 +145,12 @@ mcmc_sample <-
     } else {
       start_module <- t(replicate(
         times,
-        sample_subgraph_internal(edgelist, gorder(graph), subgraph_order, 1),
+        sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, 1),
         simplify = TRUE
       ))
     }
     ret <- mcmc_sample_internal(edgelist,
+                                getSignals(graph),
                                 outer(setNames(V(graph)$likelihood, V(graph)$name), exp_lh, "^"),
                                 fixed_order,
                                 niter,
@@ -237,5 +239,9 @@ mcmc_onelong_frequency <-
 
 preparePval <- function(graph) {
   V(graph)$likelihood <- 1
+}
 
+getSignals <- function(graph) {
+  signals <- exp(graph$signals)
+  return(data.frame(names(signals), signals))
 }

@@ -16,7 +16,7 @@ using namespace std;
  * @param gorder count of vertex in graph
  * @return vector<vector<mcmc::Edge>>
  */
-vector<vector<mcmc::Edge>> adj_list(List edgelist, size_t gorder);
+vector<mcmc::Edge> adj_list(List edgelist, size_t gorder);
 
 vector<vector<unsigned>> adj_list(IntegerMatrix edgelist, size_t gorder);
 

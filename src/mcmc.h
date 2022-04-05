@@ -4,10 +4,11 @@
 #include <random>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
+#include <string> 
 #include <Rcpp.h>
 #include "edge.h"
 #include "hsa.h"
-
 
 namespace mcmc {
     using namespace std;
@@ -16,7 +17,8 @@ namespace mcmc {
         bool fixed_size;
         size_t order;
         vector<double> nodes;
-        vector <vector<Edge> > edges;
+        vector<Edge> list_edges;
+        vector <vector<pair<size_t, size_t>>> edges;
 
         HSA inner;
         HSA outer;
@@ -31,36 +33,50 @@ namespace mcmc {
         uniform_real_distribution<> unirealdis;
 
         // These vectors are not local in is_connected in order to avoid memory allocations
-        vector<pair<unsigned, unsigned> > bfsUsed;
+        vector<unsigned> bfsUsed;
         vector<unsigned> dsu, dsuCnt;
         unsigned bfsUsedIteration = 0;
         vector<size_t> bfsQueue;
 
-        void update_outer_nodes(unsigned cand_in, unsigned cand_out);
+        unordered_map<string, double> signals;
+
+        void update_outer_edges(unsigned cand_in, unsigned cand_out);
 
         void update_neighbours(unsigned v, bool is_erased);
 
         void inner_update(unsigned v, bool is_erased);
 
-        bool is_connected(size_t erased);
+        bool is_connected(Edge erased);
+
+        void process_edge_for_random_subgraph(size_t ind, unordered_set<size_t> const & sg, HSA & candidates);
+
+        vector<pair<size_t, size_t>> get_neighbours_edge(Edge e);
+
+        vector<pair<size_t, size_t>> get_neighbours_edge(size_t e);
+
+        void remove_vertex_from_neis(size_t vertex, size_t position_to_erase);
 
     public:
-        Graph(vector<double> nodes, vector <vector<Edge> > edges, bool fixed_size);
+        Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size);
 
-        Graph(Rcpp::NumericVector nodes, vector <vector<Edge> > edges, bool fixed_size);
+        Graph(Rcpp::NumericVector nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size);
 
         void set_nodes(Rcpp::NumericVector nodes);
 
         bool next_iteration();
 
-        void initialize_module(vector<unsigned> nodes);
+        void initialize_module(vector<size_t> const & edges);
 
-        vector<unsigned> random_subgraph(size_t size);
+        vector<size_t> random_subgraph(size_t size);
 
         vector <size_t> get_inner_nodes();
 
         vector <size_t> get_outer_nodes();
+
+        double probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer);
     };
+    
+
 
 }
 

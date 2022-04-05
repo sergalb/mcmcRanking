@@ -77,7 +77,18 @@ network
 ```
 We convert `graphNEL` object to `igraph` object because *mcmcRanking* package works only graph structure of type `igraph`. And we set *p*-values of vertices as `pval` field on it. Also, we removed multiple and loop edges from graph.
 ```{r message=FALSE}
-g <- simplify(graph_from_graphnel(network))
+library(gatom)
+library(igraph)
+library(data.table)
+library(mwcsr)
+library(mcmcRanking)
+g <- makeMetabolicGraph(network=networkEx,
+                        topology = "atoms",
+                        org.gatom.anno=org.Mm.eg.gatom.annoEx,                          gene.de=gene.de.rawEx,
+                        met.db=met.kegg.dbEx,
+                        met.de=met.de.rawEx)
+g <- scoreGraph(g, k.gene=25, k.met=25)
+V(g)$likelihood <- 1
 V(g)$pval <- ttest.pval[V(g)$name]
 ```
 
@@ -86,9 +97,6 @@ V(g)$pval <- ttest.pval[V(g)$name]
 We estimate likelihood of vertices to belong active module.
 Function `set_likelihood` allows to calculate likelihood of every gene with *FDR*  equal to $10^{-7}$. It returns the `igraph` object with `likelihood` field on vertices.
 ```{r message=FALSE, warning=FALSE}
-library(mcmcRanking)
-g <- set_likelihood(graph = g, fdr = 1e-7)
-g
 ```
 Running with likelihood weights on vertices can cause to get stuck in locally good vertices, thereby finding locally significant solutions.
 So, we will iteratively increase vertex weights.
@@ -101,7 +109,7 @@ To estimate how much iteration is enough to stabilize *MCMC*, we run function `s
 This function returns log-likelihoods of subgraph on every iteration.
 
 ```{r message=FALSE, results="hide", fig.show="hold", warning=FALSE}
-y <- sample_llh(graph = g, niter = 1e5, exp_lh = 1/2^depth)
+y <- sample_llh(graph = g, 10, niter = 1e5, exp_lh = 1/2^depth)
 plot(x=names(y), y = y, type = 'l',
      xlab = "iteration number", ylab = "log-likelihood")
 ```
@@ -115,7 +123,7 @@ We found out how many iteration enough for convergence of *MCMC* method. Below f
 ```{r message=FALSE, results="hide"}
 z <-
   mcmc_sample(
-  graph = g,
+  graph = gs,
   times = 1e1,
   niter = 2e4,
   exp_lh = 1 / 2 ^ (depth:0)

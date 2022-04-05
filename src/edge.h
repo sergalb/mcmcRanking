@@ -8,12 +8,12 @@ namespace mcmc
     class Edge
     {
     public:
-        size_t from;
-        size_t to;
-        double weight;
+        size_t first;
+        size_t second;
         string signal;
-//    public:
-        Edge(size_t from, size_t to, double weight, string signal);
+        size_t id;   
+        Edge(size_t first, size_t second, string signal, size_t id);
+        string to_string();
     };
 }
 
