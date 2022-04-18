@@ -14,6 +14,7 @@ namespace mcmc {
     using namespace std;
 
     class Graph {
+        const double edge_penalty;
         bool fixed_size;
         size_t order;
         vector<double> nodes;
@@ -38,7 +39,7 @@ namespace mcmc {
         unsigned bfsUsedIteration = 0;
         vector<size_t> bfsQueue;
 
-        unordered_map<string, double> signals;
+        unordered_map<string, pair<double, int>> signals;
 
         void update_outer_edges(unsigned cand_in, unsigned cand_out);
 
@@ -46,20 +47,28 @@ namespace mcmc {
 
         void inner_update(unsigned v, bool is_erased);
 
-        bool is_connected(Edge erased);
+        bool is_connected(Edge const& erased);
 
         void process_edge_for_random_subgraph(size_t ind, unordered_set<size_t> const & sg, HSA & candidates);
 
-        vector<pair<size_t, size_t>> get_neighbours_edge(Edge e);
+        size_t edge_neighbours_size(size_t edge);
+
+        vector<pair<size_t, size_t>> get_neighbours_edge(Edge const& e);
 
         vector<pair<size_t, size_t>> get_neighbours_edge(size_t e);
 
         void remove_vertex_from_neis(size_t vertex, size_t position_to_erase);
 
-    public:
-        Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size);
+        void update_signals(Edge const& edge, bool removed);
 
-        Graph(Rcpp::NumericVector nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size);
+        double probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer);
+
+        double probability_on_change_vertex(size_t cand, size_t cur_size, size_t new_size, bool erase);
+
+    public:
+        Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, pair<double, int>> signals, bool fixed_size, double edge_penalty);
+
+        Graph(Rcpp::NumericVector nodes, vector<Edge> list_edges, unordered_map<string, pair<double, int>> signals, bool fixed_size, double edge_penalty);
 
         void set_nodes(Rcpp::NumericVector nodes);
 
@@ -69,11 +78,12 @@ namespace mcmc {
 
         vector<size_t> random_subgraph(size_t size);
 
-        vector <size_t> get_inner_nodes();
+        vector <size_t> get_inner_edges();
 
-        vector <size_t> get_outer_nodes();
+        vector <size_t> get_outer_edges();
+        
+        unordered_map<string, pair<double, int>> const& get_signals() const;
 
-        double probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer);
     };
     
 

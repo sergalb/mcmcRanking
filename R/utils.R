@@ -20,6 +20,10 @@ repetition_depth <- function(x) {
   return(d)
 }
 
+get_exp_lh <- function(graph) {
+  depth <- repetition_depth(exp(max(E(graph)$score)) / exp(min(E(graph)$score)))
+  return(1 / 2^depth)
+}
 
 
 #' Frequency of vertices.
@@ -71,4 +75,50 @@ set_likelihood <- function(graph, fdr) {
   fb <- fitBumModel(pvals, plot = FALSE)
   V(graph)$likelihood <- exp(scoreFunction(fb = fb, fdr = fdr))
   graph
+}
+
+get_gatom_graph <- function() {
+  network <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/network.kegg.rds"))
+  org.Mm.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Mm.eg.gatom.anno.rds"))
+  # org.Hs.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Hs.eg.gatom.anno.rds"))
+  met.db <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/met.kegg.db.rds"))
+  library(R.utils)
+  library(data.table)
+  met.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.met.de.tsv.gz")
+  gene.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.gene.de.tsv.gz")
+  g <- makeMetabolicGraph(network = network,
+                          topology = "metabolites",
+                          org.gatom.anno = org.Mm.eg.gatom.anno,
+                          gene.de = gene.de.raw,
+                          met.db = met.db,
+                          met.de = met.de.raw)
+  # g <- simplify(g, remove.multiple = TRUE, edge.attr.comb="min")
+  # gs <- scoreGraph(g, k.gene=50, k.met = NULL, raw=TRUE)
+  # gs$signals <- setNames(E(gs)$score, E(gs)$signal)
+  # V(gs)$likelihood <- 1
+  return(g)
+}
+
+
+.replaceNA <- function(x, y) { ifelse(is.na(x), y, x) }
+
+score_graph <- function(graph, k.gene) {
+  edge.table <- data.table(as_data_frame(graph, what = "edges"))
+
+  pvalsToFit <- edge.table[!is.na("pval")][!duplicated(signal), setNames(pval, signal)]
+
+  edge.bum <- BioNet::fitBumModel(pvalsToFit[pvalsToFit > 0], plot = F)
+  if (edge.bum$a > 0.5) {
+    E(graph)$score <- 0
+    warning("Edge scores have been assigned to 0 due to an inappropriate p-value distribution")
+  } else {
+    E(graph)$score <- with(edge.table,
+                       (edge.bum$a - 1) *
+                         (log(.replaceNA(pval, 1) + log(edge.bum$a))))
+  }
+
+
+  graph$signals <- setNames(E(graph)$score, E(graph)$signal)
+  return(graph)
+
 }

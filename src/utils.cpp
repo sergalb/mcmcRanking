@@ -7,7 +7,7 @@
 using namespace Rcpp;
 using namespace std;
 
-vector<mcmc::Edge> adj_list(List edgelist, size_t gorder) {
+vector<mcmc::Edge> adj_list(List edgelist) {
     vector<mcmc::Edge> edges;
     for (size_t i = 0; i < edgelist.size(); ++i) {
       //  cout << "iter: " << i << endl;

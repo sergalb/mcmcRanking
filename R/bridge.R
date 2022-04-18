@@ -9,8 +9,8 @@
 mcmc <- function(mat, fixed_order) {
   if (!is.matrix(mat) & !is.logical(mat))
     stop("mat must be a boolean matrix.")
-  if (is.null(colnames(mat)))
-    stop("mat must contain column names.")
+  # if (is.null(colnames(mat)))
+  #   stop("mat must contain column names.")
   if (!is.logical(fixed_order) && length(fixed_order) == 1)
     stop("fixed_order must be a boolean scalar.")
   structure(list(mat = mat, fixed_order = fixed_order), class = "MCMC")
@@ -48,13 +48,13 @@ check_arguments <- function(graph, subgraph_order, niter) {
 #' @examples
 #' data(exampleGraph)
 #' sample_subgraph(exampleGraph, 10, 1e4)
-sample_subgraph <- function(graph, subgraph_order, niter) {
+sample_subgraph <- function(graph, subgraph_order, niter, edge_penalty=0) {
   check_arguments(graph, subgraph_order, niter)
   edgelist <- as_edgelist(graph, names = FALSE) - 1
   edgelist <- cbind(edgelist, E(graph)$signal)
   edgelist <- apply(edgelist, 1, as.list)
-  res <- sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, niter) # nolint
-  return(V(graph)$name[which(res)])
+  res <- sample_subgraph_internal(edgelist, getSignals(graph, 1), gorder(graph), subgraph_order, niter, edge_penalty) # nolint
+  return(E(graph)[which(res)])
 }
 
 
@@ -88,11 +88,11 @@ sample_llh <-
     edgelist <- apply(edgelist, 1, as.list)
 
     start_module <-
-      t(sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, 1))
+      t(sample_subgraph_internal(edgelist, getSignals(graph, exp_lh), gorder(graph), subgraph_order, 1))
 
     llhs <-
       sample_llh_internal(edgelist,
-                          getSignals(graph),
+                          getSignals(graph, exp_lh),
                           V(graph)$likelihood^exp_lh,
                           niter,
                           fixed_order,
@@ -126,7 +126,8 @@ mcmc_sample <-
            times,
            niter,
            previous_mcmc,
-           exp_lh = 1) {
+           exp_lh = 1,
+           edge_penalty = 0) {
     fixed_order <- ifelse(missing(previous_mcmc), !missing(subgraph_order), previous_mcmc$fixed_order)
     subgraph_order <- ifelse(missing(subgraph_order), 0, subgraph_order)
     check_arguments(graph, subgraph_order, niter)
@@ -136,6 +137,7 @@ mcmc_sample <-
     edgelist <- as_edgelist(graph, names = FALSE) - 1
     edgelist <- cbind(edgelist, E(graph)$signal)
     edgelist <- apply(edgelist, 1, as.list)
+    signals <- getSignals(graph, exp_lh)
     if (!missing(previous_mcmc)) {
       if (class(previous_mcmc) != "MCMC")
         stop("previous_mcmc must be class of \"MCMC\".")
@@ -145,16 +147,17 @@ mcmc_sample <-
     } else {
       start_module <- t(replicate(
         times,
-        sample_subgraph_internal(edgelist, getSignals(graph), gorder(graph), subgraph_order, 1),
+        sample_subgraph_internal(edgelist, signals, gorder(graph), subgraph_order, 1, edge_penalty),
         simplify = TRUE
       ))
     }
     ret <- mcmc_sample_internal(edgelist,
-                                getSignals(graph),
+                                signals,
                                 outer(setNames(V(graph)$likelihood, V(graph)$name), exp_lh, "^"),
                                 fixed_order,
                                 niter,
-                                start_module)
+                                start_module,
+                                edge_penalty)
     return(mcmc(ret, fixed_order))
   }
 
@@ -237,11 +240,8 @@ mcmc_onelong_frequency <-
     return(res)
   }
 
-preparePval <- function(graph) {
-  V(graph)$likelihood <- 1
+getSignals <- function(graph, exp_lh) {
+  signals <- exp(graph$signals)
+  return(data.frame(names(signals), signals ^ exp_lh))
 }
 
-getSignals <- function(graph) {
-  signals <- exp(graph$signals)
-  return(data.frame(names(signals), signals))
-}

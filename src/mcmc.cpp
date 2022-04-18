@@ -3,12 +3,11 @@
 #include "mcmc.h"
 
 namespace mcmc {
-    Graph::Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size)
+    Graph::Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, pair<double, int>> signals, bool fixed_size, double edge_penalty)
             : fixed_size(fixed_size), order(list_edges.size()), nodes(nodes), list_edges(list_edges), edges(nodes.size()), inner(order), outer(order),
               in_nei_c(order, 0), neis(nodes.size()),
-              bfsUsed(nodes.size(), 0), signals(signals) {
+              bfsUsed(nodes.size(), 0), signals(signals), edge_penalty(edge_penalty){
         random_device rd;
-        //todo back random
         gen = mt19937(rd());
         unirealdis = uniform_real_distribution<>(0, 1);
         bfsQueue.reserve(nodes.size());
@@ -19,20 +18,20 @@ namespace mcmc {
         }
     }
 
+    Graph::Graph(Rcpp::NumericVector nodes, vector<Edge> list_edges, unordered_map<string, pair<double, int>> signals, bool fixed_size, double edge_penalty)
+            : Graph(vector<double>(nodes.begin(), nodes.end()), list_edges, signals, fixed_size, edge_penalty) {}
+
     string pair_to_str(pair<size_t, size_t> p) {
         return to_string(p.first) + " " + to_string(p.second);
     }
 
     template<typename T>
-    void print_vec(vector<T> vec, function<string(T)> to_string, string spliterator = " ") {
+    void print_vec(vector<T> vec, function<string(T)> to_string, string spliterator = "; ") {
         for (auto e : vec) {
             cout << to_string(e) << spliterator;
         }
         cout << endl;
     }
-
-    Graph::Graph(Rcpp::NumericVector nodes, vector<Edge> list_edges, unordered_map<string, double> signals, bool fixed_size)
-            : Graph(vector<double>(nodes.begin(), nodes.end()), list_edges, signals, fixed_size) {}
 
     void Graph::set_nodes(Rcpp::NumericVector nodes) {
         this->nodes = vector<double>(nodes.begin(), nodes.end());
@@ -50,7 +49,7 @@ namespace mcmc {
     }
 
     vector<size_t> Graph::random_subgraph(size_t size) {
-        cout << endl << "start random subgraph" << endl;
+        // cout << endl << "start random subgraph" << endl;
         if (size == 0) {
             return vector<size_t>();
         }
@@ -69,11 +68,16 @@ namespace mcmc {
         return vector<size_t>(sg.begin(), sg.end());
     }
 
-    vector<pair<size_t, size_t>> Graph::get_neighbours_edge(Edge e) {
-        vector<pair<size_t, size_t>> neighbours(edges[e.first].size() - 1 + edges[e.second].size() - 1);
+    size_t Graph::edge_neighbours_size(size_t edge) {
+        Edge const& e = list_edges[edge];
+        return edges[e.first].size() - 1 + edges[e.second].size() - 1;
+    }
+
+    vector<pair<size_t, size_t>> Graph::get_neighbours_edge(Edge const& e) {
+        vector<pair<size_t, size_t>> neighbours(edge_neighbours_size(e.id));
         auto it = copy_if(edges[e.first].begin(), edges[e.first].end(), neighbours.begin(), [&e](pair<size_t, size_t> const& edge) { return e.id != edge.second; } );
         copy_if(edges[e.second].begin(), edges[e.second].end(), it, [&e](pair<size_t, size_t> const& edge) { return e.id != edge.second; } );
-        //todo check return optimization
+        //todo check return optimization or even make iterator instead of copying all edges
         return neighbours;
     }
 
@@ -83,7 +87,7 @@ namespace mcmc {
     }
 
     void Graph::initialize_module(vector<size_t> const & initial_edges) {
-        cout << endl << "start initialize subgraph" << endl;
+        // cout << endl << "start initialize subgraph" << endl;
         inner.clear();
         outer.clear();
         std::fill(in_nei_c.begin(), in_nei_c.end(), 0);
@@ -107,6 +111,8 @@ namespace mcmc {
             //todo understand how neis used (only for conection checking?)
             neis[e.first].emplace_back(e.second, neis[e.second].size());
             neis[e.second].emplace_back(e.first, neis[e.first].size() - 1);
+
+            update_signals(e, false);
         }
     }
 
@@ -115,8 +121,8 @@ namespace mcmc {
         return p == v ? v : p = dsuGetRoot(dsu, p);
     }
 
-    bool Graph::is_connected(Edge erased) {
-        cout << "is connected " << erased.to_string() << endl;
+    bool Graph::is_connected(Edge const& erased) {
+        // cout << "is connected " << erased.to_string() << endl;
         inner_update(erased.id, true);
 
         bfsQueue.clear();
@@ -150,8 +156,6 @@ namespace mcmc {
             if (in_nei_c[neighbour]++ == 0 && neighbour != cand_in) {
                 if (!inner.contains(neighbour)) {
                     outer.insert(neighbour);
-                } else {
-                    throw domain_error("inner edge " + to_string(neighbour) + " had no inner neighbours");
                 }
             }
         }
@@ -161,13 +165,6 @@ namespace mcmc {
             if (--in_nei_c[neighbour] == 0 && neighbour != cand_out) {
                 if (!inner.contains(neighbour)) {
                     outer.erase(neighbour);
-                } else {
-                    auto n_of_n = get_neighbours_edge(neighbour);
-                    for (auto const& n_e : n_of_n) {
-                        cout << n_e.second << " inner: " << inner.contains(n_e.second) << "; ";
-                    }
-                    cout << endl;
-                    throw domain_error("inner edge " + to_string(neighbour) + " have no inner neighbours");
                 }
             }
         }
@@ -180,16 +177,20 @@ namespace mcmc {
             neis[newP.first][newP.second].second = position_to_erase;
         }
         vec.pop_back();
-        // if (vertex == 169 || newP.first == 169 || vertex == 157 || newP.first == 157) {
-        //     cout << "neis of 169 and 157" << endl;
-        //     print_vec<pair<size_t, size_t>>(neis[169], &pair_to_str);
-        //     print_vec<pair<size_t, size_t>>(neis[157], &pair_to_str);
-        // }
-        
+    }
+
+    void Graph::update_signals(Edge const& edge, bool remove) {
+        int dif = remove ? -1 : 1;
+        auto it = signals.find(edge.signal);
+        it->second = {it->second.first, it->second.second + dif};
+        if (it->second.second < 0) {
+            throw domain_error("using signal less than 0 times");
+        }
     }
 
     void Graph::inner_update(unsigned e, bool is_erased) {
         // cout << "inner update, e: " << e << "; erased: " << is_erased << endl;
+        
         if (is_erased) {
             inner.erase(e);
             Edge edge = list_edges[e];
@@ -203,61 +204,39 @@ namespace mcmc {
                 throw domain_error("couldn't find eachother ends of edge in neis vector");
             }
             auto v2 = neis[edge.second][v1->second];
-            if (e == 154) {
-                cout << "v1: " << v1->first << " " << v1->second << endl;
-                cout << "v2: " << v2.first << " " << v2.second << endl;
-                print_vec<pair<size_t, size_t>>(neis[edge.first], &pair_to_str);
-                print_vec<pair<size_t, size_t>>(neis[edge.second], &pair_to_str);
-                print_vec<pair<size_t, size_t>>(neis[169], &pair_to_str);
-                print_vec<pair<size_t, size_t>>(neis[157], &pair_to_str);
-            }
             remove_vertex_from_neis(v1->first, v1->second);
             remove_vertex_from_neis(v2.first, v2.second);
+        
         } else {
             if (inner.contains(e)) {
                 throw domain_error("try to add in inner existing edge");
             } 
             inner.insert(e);
             Edge inserted_edge = list_edges[e];
-            // size_t new_vertex;
-            // if (neis[inserted_edge.first].empty()) {
-            //     new_vertex = inserted_edge.first;
-            // } else {
-            //     new_vertex = inserted_edge.second;
-            // } 
-             // else {
-                 // throw invalid_argument("both vertexes: " + to_string(inserted_edge.first) + " and " + to_string(inserted_edge.second) + " of add edge " + to_string(e) + " included to graph");
-            // }
-            // for (auto const& edge : edges[new_vertex]) {
-            //     size_t v2 = edge.second;
-            // if (!neis[v2].empty()) {
             neis[inserted_edge.first].emplace_back(inserted_edge.second, neis[inserted_edge.second].size());
             neis[inserted_edge.second].emplace_back(inserted_edge.first, neis[inserted_edge.first].size() - 1);
-            // }
-            // }
         }
     }
 
-    void Graph::update_neighbours(unsigned v, bool is_erased) {
+    void Graph::update_neighbours(unsigned e, bool is_erased) {
+        auto neighbours = get_neighbours_edge(e);
         if (is_erased) {
             if (inner.size() != 0)
-                outer.insert(v);
-            for (auto const& edge : edges[v]) {
-                size_t neighbour = edge.second;
-                if (--in_nei_c[neighbour] == 0) {
-                    if (!inner.contains(neighbour)) {
-                        outer.erase(neighbour);
+                outer.insert(e);
+            for (auto const& neighbour : neighbours) {
+                if (--in_nei_c[neighbour.second] == 0) {
+                    if (!inner.contains(neighbour.second)) {
+                        outer.erase(neighbour.second);
                     }
                 }
             }
         } else {
             if (inner.size() != 1)
-                outer.erase(v);
-            for (auto const& edge : edges[v]) {
-                size_t neighbour = edge.second;
-                if (in_nei_c[neighbour]++ == 0) {
-                    if (!inner.contains(neighbour)) {
-                        outer.insert(neighbour);
+                outer.erase(e);
+            for (auto const& neighbour : neighbours) {
+                if (in_nei_c[neighbour.second]++ == 0) {
+                    if (!inner.contains(neighbour.second)) {
+                        outer.insert(neighbour.second);
                     }
                 }
             }
@@ -265,13 +244,24 @@ namespace mcmc {
     }
 
     double Graph::probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer) {
-        double in_likelihood = signals[list_edges[cand_in].signal];
-        double out_likelihood = signals[list_edges[cand_out].signal];
+        auto in_signal = signals[list_edges[cand_in].signal];
+        auto out_signal = signals[list_edges[cand_out].signal];
+        double in_likelihood = (in_signal.second == 1) ? in_signal.first : 1;
+        double out_likelihood = (out_signal.second == 0) ? out_signal.first : 1;
         return (out_likelihood * cur_size_outer) / (in_likelihood * new_size_outer);
     }
 
+    double Graph::probability_on_change_vertex(size_t cand, size_t cur_size, size_t new_size, bool erase) {
+        auto signal = signals[list_edges[cand].signal];
+
+        //erase == 1 -> (signal.second == 1) - last edge activate signal; erase == 0 -> (signal.second == 0) no edges activate signal
+        double likelihood = (signal.second == erase) ? signal.first : 1;
+        
+        return ((erase ? 1 / likelihood : likelihood) * cur_size / new_size) * (erase ? 1/edge_penalty : edge_penalty);
+    }
+
     bool Graph::next_iteration() {
-        cout << endl << "start next iteration, fixed size: " << fixed_size << "; inner size: " << inner.size() << endl;
+        // cout << endl << "start next iteration, fixed size: " << fixed_size << "; inner size: " << inner.size() << endl;
         if (fixed_size) {
             if (inner.size() == 0) {
                 return true;
@@ -282,24 +272,20 @@ namespace mcmc {
             unsigned cand_in = inner.get(uniform_int_distribution<>(0, inner.size() - 1)(gen));
             unsigned cand_out = outer.get(uniform_int_distribution<>(0, outer.size() - 1)(gen));
             double gen_p = unirealdis(gen);
-            unsigned cur_size_outer = outer.size();
-            unsigned new_size_outer;
-
-            if (inner.size() == 1) {
-                Edge const& in_e = list_edges[cand_in];
-                new_size_outer = edges[in_e.first].size() - 1 + edges[in_e.second].size() - 1;
+            size_t cur_size_outer = outer.size();
+            size_t new_size_outer;
+            // cout << "cand in, cand out: " << cand_in << " " << cand_out << endl;
+            if (inner.size() == 1) {            
+                new_size_outer = edge_neighbours_size(cand_in);
             } else {
                 new_size_outer = outer.size();
                 auto in_neighbour_edges = get_neighbours_edge(cand_in);
                 auto out_neighbour_edges = get_neighbours_edge(cand_out);
                 for (auto const& x : in_neighbour_edges) {
-                    if (!--in_nei_c[x.second]) --new_size_outer;
+                    if (in_nei_c[x.second] == 1) --new_size_outer;
                 }
                 for (auto const& x : out_neighbour_edges) {
                     if (!in_nei_c[x.second]) ++new_size_outer;
-                }
-                for (auto const& x : in_neighbour_edges) {
-                    ++in_nei_c[x.second];
                 }
             }
             double p = probability_on_change_vertex(cand_in, cand_out, cur_size_outer, new_size_outer);
@@ -313,10 +299,13 @@ namespace mcmc {
             }
             inner_update(cand_in, true);
             update_outer_edges(cand_in, cand_out);
+            update_signals(in_edge, true);
+            update_signals(list_edges[cand_out], false);
             return true;
         } else {
             unsigned cur_in_out_size = inner.size() == 0 ? order : outer.size() + inner.size();
             bool erase = unirealdis(gen) < (1.0 * inner.size()) / cur_in_out_size;
+            cout << "erase: " << erase << endl;
             unsigned cand;
             if (erase) {
                 cand = inner.get(uniform_int_distribution<>(0, inner.size() - 1)(gen));
@@ -327,45 +316,57 @@ namespace mcmc {
             }
             double gen_p = unirealdis(gen);
             if (erase) {
-                int new_in_out_size = inner.size() + outer.size() - edges[cand].size() + in_nei_c[cand];
+                int new_in_out_size = inner.size() + outer.size() - edge_neighbours_size(cand) + in_nei_c[cand];
                 if (inner.size() == 1) {
                     new_in_out_size = order;
-                } else if (cur_in_out_size <= edges[cand].size() - in_nei_c[cand]) {
+                } else if (cur_in_out_size <= edge_neighbours_size(cand) - in_nei_c[cand]) {
                     new_in_out_size = 1;
+                    cout << "cand: " << cand << " cur in out: " << cur_in_out_size << endl;
+                    print_vec<pair<size_t,size_t>>(get_neighbours_edge(cand), &pair_to_str);
+                    throw domain_error("count of innner and outer edges less then count outer neighbours of some edge");
                 }
-                double p = cur_in_out_size / (nodes[cand] * new_in_out_size);
+                double p = probability_on_change_vertex(cand, cur_in_out_size, new_in_out_size, true);
                 if (gen_p >= p) {
+                    
                     return false;
                 }
+
                 if (!is_connected(list_edges[cand])) {
                     return false;
                 }
-                inner_update(cand, erase);
+                cout << "erase go through first check" << endl;
             } else {
-                double p = nodes[cand] * (inner.size() == 0 ? 1.0 * order / (1 + edges[cand].size()) : 1);
+                double estimation = (inner.size() == 0 ? 1.0 * order / (1 + edge_neighbours_size(cand)) : 1);
+                double p = probability_on_change_vertex(cand, estimation, 1, false);
                 if (gen_p >= p) {
                     return false;
                 }
-                inner_update(cand, erase);
             }
+            inner_update(cand, erase);
             update_neighbours(cand, erase);
+            update_signals(list_edges[cand], erase);
             unsigned new_in_out_size = inner.size() == 0 ? order : outer.size() + inner.size();
-            double p = (erase ? 1 / nodes[cand] : nodes[cand]) * (1.0 * cur_in_out_size / new_in_out_size);
+            double p = probability_on_change_vertex(cand, cur_in_out_size, new_in_out_size, erase);
             if (gen_p < p) {
+                cout << "erase ?: ("+ to_string(erase) + ") edge" << endl;
                 return true;
             }
             inner_update(cand, !erase);
             update_neighbours(cand, !erase);
+            update_signals(list_edges[cand], !erase);
             return false;
         }
     }
 
-    vector <size_t> Graph::get_inner_nodes() {
-        
+    vector <size_t> Graph::get_inner_edges() {
         return inner.get_all();
     }
 
-    vector <size_t> Graph::get_outer_nodes() {
+    vector <size_t> Graph::get_outer_edges() {
         return outer.get_all();
+    }
+
+    unordered_map<string, pair<double, int>>  const& Graph::get_signals() const {
+        return signals;
     }
 };

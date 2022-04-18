@@ -5,32 +5,33 @@
 #include "mcmc.h"
 #include "utils.h"
 #include <typeinfo>       // operator typeid
+#include <functional>
 
 
 using namespace Rcpp;
 using namespace std;
 using mcmc::Graph;
 
-unordered_map<string, double> convert_signals_to_map(DataFrame signals) {
-    unordered_map<string, double> result;
+unordered_map<string, pair<double, int>> convert_signals_to_map(DataFrame signals) {
+    unordered_map<string, pair<double, int>> result;
     StringVector signals_names = signals[0];
     NumericVector signals_weights = signals[1];
     for (size_t i = 0; i < signals_names.size(); ++i) {
-        result.emplace(signals_names[i], signals_weights[i]);
+        result.emplace(signals_names[i], pair<double, int>(signals_weights[i], 0));
     }
     return result;
 }
 
 // [[Rcpp::export]]
-LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gorder, int module_size, size_t niter) {
-    cout << endl << "start sample subgraph" << endl;
+LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gorder, int module_size, size_t niter, double edge_penalty) {
+    // cout << endl << "start sample subgraph" << endl;
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
     vector<double> nodes(gorder, 1);
-    Graph g = Graph(nodes, adj_list(edgelist, gorder), convert_signals_to_map(signals), true);
+    Graph g = Graph(nodes, adj_list(edgelist), convert_signals_to_map(signals), true, edge_penalty);
     g.initialize_module(g.random_subgraph(module_size));
     for (size_t i = 0; i < niter; ++i) {
         g.next_iteration();
@@ -41,8 +42,8 @@ LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gor
     }
     if (niter > 0)
         pb.tick(niter % 10000);
-    LogicalVector ret(gorder, false);
-    for (size_t x : g.get_inner_nodes()) {
+    LogicalVector ret(edgelist.size(), false);
+    for (size_t x : g.get_inner_edges()) {
        ret[x] = true;
     }
     return ret;
@@ -50,13 +51,13 @@ LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gor
 
 // [[Rcpp::export]]
 NumericVector sample_llh_internal(List edgelist, DataFrame signals, NumericVector likelihood, size_t niter, bool fixed_size,
-                                  LogicalMatrix start_module) {
+                                  LogicalMatrix start_module, double edge_penalty) {
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
-    Graph g = Graph(likelihood, adj_list(edgelist, likelihood.size()), convert_signals_to_map(signals), fixed_size);
+    Graph g = Graph(likelihood, adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
     vector<size_t> module;
     for (size_t j = 0; j < start_module.ncol(); ++j) {
         if (start_module(0, j)) {
@@ -71,8 +72,10 @@ NumericVector sample_llh_internal(List edgelist, DataFrame signals, NumericVecto
             Rcpp::checkUserInterrupt();
             pb.tick(10000);
         }
-        for (size_t x : g.get_inner_nodes()) {
-            llhs[i] += log(likelihood[x]);
+        for (auto const& x : g.get_signals()) {
+            if (x.second.second != 0) {
+                llhs[i] += log(x.second.first);
+            }
         }
     }
     if (niter > 0)
@@ -80,15 +83,26 @@ NumericVector sample_llh_internal(List edgelist, DataFrame signals, NumericVecto
     return llhs;
 }
 
+// template<typename T>
+void print_vec(vector<double> vec, string spliterator = " ") {
+    for (auto e : vec) {
+        cout << e << spliterator;
+    }
+    cout << endl;
+}
+
+
 // [[Rcpp::export]]
 LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatrix likelihood, bool fixed_size, size_t niter,
-                                   LogicalMatrix start_module) {
-    Graph g = Graph((NumericVector) likelihood(_, 0), adj_list(edgelist, likelihood.nrow()), convert_signals_to_map(signals), fixed_size);
-    size_t order = likelihood.nrow();
+                                   LogicalMatrix start_module, double edge_penalty) {
+                                       cout << "start mcmc sample" << endl;
+    Graph g = Graph((NumericVector) likelihood(_, 0), adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
+    cout<< "graph created" << endl;
+    size_t order = edgelist.size();
     unsigned times = start_module.nrow();
     //LogicalVector ret(order * times, false);
     LogicalMatrix ret(times, order);
-    colnames(ret) = rownames(likelihood);
+    // colnames(ret) = rownames(edgelist);
 
     RProgress::RProgress pb;
     if (times * likelihood.ncol() * niter > 0) {
@@ -104,8 +118,10 @@ LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatr
         }
         g.initialize_module(module);
         for (int k = 0; k < likelihood.ncol(); ++k) {
+//            cout << "i: " << i << " k: " << k << " likelihood.size: " << ((NumericVector) likelihood(_, k)).size() << endl;
             g.set_nodes((NumericVector) likelihood(_, k));
             for (size_t j = 0; j < niter; ++j) {
+                // cout << "j: " << j << endl;
                 g.next_iteration();
                 if (j % 10000 == 9999) {
                     Rcpp::checkUserInterrupt();
@@ -115,7 +131,7 @@ LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatr
             if (niter > 0)
                 pb.tick(niter % 10000);
         }
-        for (size_t x : g.get_inner_nodes()) {
+        for (size_t x : g.get_inner_edges()) {
             //ret[x + i * order] = true;
             ret(i, x) = true;
         }
@@ -126,13 +142,13 @@ LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatr
 // [[Rcpp::export]]
 LogicalMatrix
 mcmc_onelong_internal(List edgelist, DataFrame signals, NumericVector likelihood, bool fixed_size, int module_size, size_t start,
-                      size_t niter) {
+                      size_t niter, double edge_penalty) {
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
-    Graph g = Graph(likelihood, adj_list(edgelist, likelihood.size()), convert_signals_to_map(signals), fixed_size);
+    Graph g = Graph(likelihood, adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
     size_t order = likelihood.size();
     g.initialize_module(g.random_subgraph(module_size));
     //LogicalVector ret(order * (niter - start), false);
@@ -147,7 +163,7 @@ mcmc_onelong_internal(List edgelist, DataFrame signals, NumericVector likelihood
         if (i < start) {
             continue;
         }
-        for (size_t x : g.get_inner_nodes()) {
+        for (size_t x : g.get_inner_edges()) {
             //ret[x + (i - start) * order] = true;
             ret(i-start, x) = true;
         }
@@ -160,13 +176,13 @@ mcmc_onelong_internal(List edgelist, DataFrame signals, NumericVector likelihood
 // [[Rcpp::export]]
 IntegerVector
 mcmc_onelong_frequency_internal(List edgelist, DataFrame signals, NumericVector likelihood, bool fixed_size, int module_size,
-                                size_t start, size_t niter) {
+                                size_t start, size_t niter, double edge_penalty) {
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
-    Graph g = Graph(likelihood, adj_list(edgelist, likelihood.size()), convert_signals_to_map(signals), fixed_size);
+    Graph g = Graph(likelihood, adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
     size_t order = likelihood.size();
     g.initialize_module(g.random_subgraph(module_size));
     IntegerVector ret(order, 0);
@@ -180,7 +196,7 @@ mcmc_onelong_frequency_internal(List edgelist, DataFrame signals, NumericVector 
         if (i < start) {
             continue;
         }
-        for (size_t x : g.get_inner_nodes()) {
+        for (size_t x : g.get_inner_edges()) {
             ret[x]++;
         }
     }

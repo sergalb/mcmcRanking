@@ -87,7 +87,7 @@ g <- makeMetabolicGraph(network=networkEx,
                         org.gatom.anno=org.Mm.eg.gatom.annoEx,                          gene.de=gene.de.rawEx,
                         met.db=met.kegg.dbEx,
                         met.de=met.de.rawEx)
-g <- scoreGraph(g, k.gene=25, k.met=25)
+g <- scoreGraph(g, k.gene=25, k.met=NULL)
 V(g)$likelihood <- 1
 V(g)$pval <- ttest.pval[V(g)$name]
 ```
