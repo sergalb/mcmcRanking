@@ -34,10 +34,10 @@ namespace mcmc {
         uniform_real_distribution<> unirealdis;
 
         // These vectors are not local in is_connected in order to avoid memory allocations
-        vector<unsigned> bfsUsed;
+        vector<pair<bool, bool>> bfsUsed;
         vector<unsigned> dsu, dsuCnt;
         unsigned bfsUsedIteration = 0;
-        vector<size_t> bfsQueue;
+        vector<pair<size_t, bool>> bfsQueue;
 
         unordered_map<string, pair<double, int>> signals;
 
@@ -59,11 +59,17 @@ namespace mcmc {
 
         void remove_vertex_from_neis(size_t vertex, size_t position_to_erase);
 
-        void update_signals(Edge const& edge, bool removed);
+        void update_signals_on_erase(Edge & edge);
 
-        double probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer);
+        void update_signals_on_add(Edge & edge, int signal);
 
-        double probability_on_change_vertex(size_t cand, size_t cur_size, size_t new_size, bool erase);
+        void update_signals(string const& signal, int diff);
+
+        pair<double, int> probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer);
+
+        pair<double, int> probability_on_change_vertex(size_t cand, size_t cur_size, size_t new_size, bool erase);
+
+        size_t peek_signal(vector<string> const& signals_cand);
 
     public:
         Graph(vector<double> nodes, vector<Edge> list_edges, unordered_map<string, pair<double, int>> signals, bool fixed_size, double edge_penalty);

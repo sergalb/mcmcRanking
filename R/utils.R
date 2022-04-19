@@ -1,3 +1,6 @@
+library(data.table)
+
+
 #' Number of runs of iterative likelihood increase of vertices.
 #'
 #' Running MCMC with likelihood weights on vertices can cause to get stuck in
@@ -17,11 +20,11 @@ repetition_depth <- function(x) {
     x <- sqrt(x)
     d <- d + 1
   }
-  return(d)
+  return(d - 2)
 }
 
 get_exp_lh <- function(graph) {
-  depth <- repetition_depth(exp(max(E(graph)$score)) / exp(min(E(graph)$score)))
+  depth <- repetition_depth(exp(max(graph$signals)) / exp(min(graph$signals)))
   return(1 / 2^depth)
 }
 
@@ -77,6 +80,42 @@ set_likelihood <- function(graph, fdr) {
   graph
 }
 
+
+#' score_graph.
+#'
+#' score graph.
+#'
+#' @param graph An \code{igraph} graph.
+#' @return An \code{igraph} graph with \emph{likelihood} vertex attribute.
+#' @importFrom data.table data.table
+#' @importFrom BioNet fitBumModel scoreFunction
+#' @export
+#' @examples
+#' data(exampleGraph)
+#' score_graph(exampleGraph)
+score_graph <- function(graph) {
+  edge.table <- data.table(as_data_frame(graph, what = "edges"))
+
+  pvalsToFit <- edge.table[!is.na(pval)][!duplicated(signal), setNames(pval, signal)]
+
+  edge.bum <- BioNet::fitBumModel(pvalsToFit[pvalsToFit > 0], plot = F)
+  if (edge.bum$a > 0.5) {
+    E(graph)$score <- 0
+    warning("Edge scores have been assigned to 0 due to an inappropriate p-value distribution")
+  } else {
+    edge.threshold <- BioNet::fdrThreshold(0.1, edge.bum)
+    E(graph)$score <- with(edge.table,
+                       (edge.bum$a - 1) *
+                         (log(.replaceNA(pval, 1)) - log(edge.threshold)))
+  }
+
+
+  graph$signals <- setNames(E(graph)$score, E(graph)$signal)
+  return(graph)
+
+}
+
+
 get_gatom_graph <- function() {
   network <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/network.kegg.rds"))
   org.Mm.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Mm.eg.gatom.anno.rds"))
@@ -92,33 +131,10 @@ get_gatom_graph <- function() {
                           gene.de = gene.de.raw,
                           met.db = met.db,
                           met.de = met.de.raw)
-  # g <- simplify(g, remove.multiple = TRUE, edge.attr.comb="min")
-  # gs <- scoreGraph(g, k.gene=50, k.met = NULL, raw=TRUE)
-  # gs$signals <- setNames(E(gs)$score, E(gs)$signal)
-  # V(gs)$likelihood <- 1
   return(g)
 }
 
 
 .replaceNA <- function(x, y) { ifelse(is.na(x), y, x) }
 
-score_graph <- function(graph, k.gene) {
-  edge.table <- data.table(as_data_frame(graph, what = "edges"))
 
-  pvalsToFit <- edge.table[!is.na("pval")][!duplicated(signal), setNames(pval, signal)]
-
-  edge.bum <- BioNet::fitBumModel(pvalsToFit[pvalsToFit > 0], plot = F)
-  if (edge.bum$a > 0.5) {
-    E(graph)$score <- 0
-    warning("Edge scores have been assigned to 0 due to an inappropriate p-value distribution")
-  } else {
-    E(graph)$score <- with(edge.table,
-                       (edge.bum$a - 1) *
-                         (log(.replaceNA(pval, 1) + log(edge.bum$a))))
-  }
-
-
-  graph$signals <- setNames(E(graph)$score, E(graph)$signal)
-  return(graph)
-
-}

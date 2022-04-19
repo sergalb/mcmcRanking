@@ -4,8 +4,15 @@
 \alias{mcmc_sample}
 \title{Sample connected subgraphs by likelihood value.}
 \usage{
-mcmc_sample(graph, subgraph_order, times, niter, previous_mcmc,
-  exp_lh = 1)
+mcmc_sample(
+  graph,
+  subgraph_order,
+  times,
+  niter,
+  previous_mcmc,
+  exp_lh = 1,
+  edge_penalty = 0
+)
 }
 \arguments{
 \item{graph}{The original graph of class \code{igraph}.}

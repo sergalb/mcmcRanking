@@ -4,7 +4,8 @@
 \name{exampleGraph}
 \alias{exampleGraph}
 \title{Example graph.}
-\format{An igraph object with vertex attributes:
+\format{
+An igraph object with vertex attributes:
 \describe{
 \item{name}{Concatenation of \code{geneID} and \code{geneSymbol.}}
 \item{geneID}{Gene ID.}
@@ -15,7 +16,8 @@
 \item{q}{Probability of not belonging vertex to an active module.}
 \item{r}{Rank of vertex derived from \code{probabilistic_rank} function using
   its \code{q}.}
-}}
+}
+}
 \usage{
 exampleGraph
 }

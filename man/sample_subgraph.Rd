@@ -4,7 +4,7 @@
 \alias{sample_subgraph}
 \title{Sample a connected subgraph from an uniform distribution.}
 \usage{
-sample_subgraph(graph, subgraph_order, niter)
+sample_subgraph(graph, subgraph_order, niter, edge_penalty = 0)
 }
 \arguments{
 \item{graph}{The original graph of class \code{igraph}.}

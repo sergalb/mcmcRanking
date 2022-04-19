@@ -96,6 +96,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// accessLOL
+double accessLOL(List l);
+RcppExport SEXP _mcmcRanking_accessLOL(SEXP lSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< List >::type l(lSEXP);
+    rcpp_result_gen = Rcpp::wrap(accessLOL(l));
+    return rcpp_result_gen;
+END_RCPP
+}
 // probabilistic_rank_internal
 IntegerVector probabilistic_rank_internal(IntegerMatrix edgelist, DataFrame df_nodes);
 RcppExport SEXP _mcmcRanking_probabilistic_rank_internal(SEXP edgelistSEXP, SEXP df_nodesSEXP) {
@@ -115,6 +126,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_mcmcRanking_mcmc_sample_internal", (DL_FUNC) &_mcmcRanking_mcmc_sample_internal, 7},
     {"_mcmcRanking_mcmc_onelong_internal", (DL_FUNC) &_mcmcRanking_mcmc_onelong_internal, 8},
     {"_mcmcRanking_mcmc_onelong_frequency_internal", (DL_FUNC) &_mcmcRanking_mcmc_onelong_frequency_internal, 8},
+    {"_mcmcRanking_accessLOL", (DL_FUNC) &_mcmcRanking_accessLOL, 1},
     {"_mcmcRanking_probabilistic_rank_internal", (DL_FUNC) &_mcmcRanking_probabilistic_rank_internal, 2},
     {NULL, NULL, 0}
 };

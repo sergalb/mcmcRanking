@@ -3,7 +3,6 @@
 \docType{package}
 \name{mcmcRanking}
 \alias{mcmcRanking}
-\alias{mcmcRanking-package}
 \title{The mcmcRanking package}
 \description{
 Tool for estimate probabilities of vertices being in active subgraph using

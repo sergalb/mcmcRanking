@@ -10,14 +10,8 @@ using namespace std;
 vector<mcmc::Edge> adj_list(List edgelist) {
     vector<mcmc::Edge> edges;
     for (size_t i = 0; i < edgelist.size(); ++i) {
-      //  cout << "iter: " << i << endl;
         List edge = edgelist[i];
-        string froms = edge[0];
-        string tos = edge[1];
-        int from = stoi(froms);
-        int to = stoi(tos);
-        string signalName = edge[2];
-        edges.emplace_back(from, to, signalName, i);
+         edges.emplace_back(edge[0], edge[1], edge[2], i);
     }
     return edges;
 }

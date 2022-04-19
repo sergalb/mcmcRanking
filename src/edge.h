@@ -10,9 +10,10 @@ namespace mcmc
     public:
         size_t first;
         size_t second;
-        string signal;
-        size_t id;   
-        Edge(size_t first, size_t second, string signal, size_t id);
+        vector<string> signals;
+        size_t id;
+        int active_signal = -1;   
+        Edge(size_t first, size_t second, vector<string> signals, size_t id);
         string to_string();
     };
 }
