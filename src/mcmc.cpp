@@ -33,6 +33,13 @@ namespace mcmc {
         cout << endl;
     }
 
+    void Graph::set_signals(vector<pair<string, double>> signals_value) {
+        for (auto const& sig_llh: signals_value) {
+            auto it = signals.find(sig_llh.first);
+            it->second = {sig_llh.second, it->second.second};
+        }
+    }
+
     void Graph::set_nodes(Rcpp::NumericVector nodes) {
         this->nodes = vector<double>(nodes.begin(), nodes.end());
     }
@@ -94,11 +101,18 @@ namespace mcmc {
         for (auto &x : neis) {
             x.clear();
         }
+        for(auto & signal: signals) {
+            signal.second.second = 0;
+        }
+        for (auto & edge: list_edges) {
+            edge.active_signal = -1;
+        }
+        
         for (size_t edge : initial_edges) {
             inner.insert(edge);
         }
         for (size_t i = 0; i < inner.size(); ++i) {
-            Edge e = list_edges[inner.get(i)];
+            Edge &e = list_edges[inner.get(i)];
             vector<pair<size_t, size_t>> neighbours = get_neighbours_edge(e);
             for (auto neighbour: neighbours) {
                 size_t neighbour_edge = neighbour.second;
@@ -158,6 +172,7 @@ namespace mcmc {
     }
 
     void Graph::update_outer_edges(unsigned cand_in, unsigned cand_out) {
+        // cout << "update outer edges" << endl;
         outer.swap(cand_out, cand_in);
         auto out_neighbour_edges = get_neighbours_edge(cand_out);
         for (auto const& edge : out_neighbour_edges) {
@@ -189,11 +204,13 @@ namespace mcmc {
     }
 
     void Graph::update_signals_on_erase(Edge & edge) {
+        // cout << "update signals on erase" << endl;
         update_signals(edge.signals[edge.active_signal], -1);
         edge.active_signal = -1;
     }
     
     void Graph::update_signals_on_add(Edge & edge, int signal) {
+        // cout << "update signals on add" << endl;
         edge.active_signal = signal;
         update_signals(edge.signals[signal], 1);
     }
@@ -282,7 +299,6 @@ namespace mcmc {
     pair<double, int> Graph::probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer) {
         vector<string> const& signals_out= list_edges[cand_out].signals;
         size_t signal_out_ind = peek_signal(signals_out);
-
         Edge const& in_edge = list_edges[cand_in];
         auto in_signal = signals[in_edge.signals[in_edge.active_signal]];
         auto out_signal = signals[signals_out[signal_out_ind]];
@@ -292,16 +308,22 @@ namespace mcmc {
 
         double multisignals_penalty = log(exp(1) - 1 + signals_out.size());
 
+        auto res = (out_likelihood * cur_size_outer) / (in_likelihood * new_size_outer * multisignals_penalty); 
+        // cout << "in llh " << in_likelihood << " out llh " << out_likelihood  << " mult penalty " << multisignals_penalty << " cur size " << cur_size_outer << " new size " << new_size_outer << " prob " << res << endl;
         return {(out_likelihood * cur_size_outer) / (in_likelihood * new_size_outer * multisignals_penalty), signal_out_ind};
     }
 
     pair<double, int> Graph::probability_on_change_vertex(size_t cand, size_t cur_size, size_t new_size, bool erase) {
+        // cout << "probability floating cand " << cand << " , cur_size: " << cur_size << " , new size: " << new_size << " , erase: " << erase << endl;
         size_t signal_ind;
         Edge const& cand_edge = list_edges[cand];
         if (erase) {
             signal_ind = cand_edge.active_signal;
+            if (cand_edge.active_signal == -1) {
+                throw domain_error("active signal is -1 while erasing edge: " + cand_edge.to_string());
+            }
         } else {
-            signal_ind = peek_signal(cand_edge.signals);
+            signal_ind = uniform_int_distribution<>(0, cand_edge.signals.size() - 1)(gen);
         }
         double multisignals_penalty = erase ? 1 : 1 / (log(exp(1) - 1 + cand_edge.signals.size()));
         double size_penalty = (erase ? 1/edge_penalty : edge_penalty);
@@ -315,7 +337,6 @@ namespace mcmc {
     }
 
     bool Graph::next_iteration() {
-        // cout << endl << "start next iteration, fixed size: " << fixed_size << "; inner size: " << inner.size() << endl;
         if (fixed_size) {
             if (inner.size() == 0) {
                 return true;
@@ -328,7 +349,6 @@ namespace mcmc {
             double gen_p = unirealdis(gen);
             size_t cur_size_outer = outer.size();
             size_t new_size_outer;
-            // cout << "cand in, cand out: " << cand_in << " " << cand_out << endl;
             if (inner.size() == 1) {            
                 new_size_outer = edge_neighbours_size(cand_in);
             } else {
@@ -346,20 +366,19 @@ namespace mcmc {
             if (gen_p >= p_change_vertex.first)
                 return false;
             inner_update(cand_out, false);
-            Edge in_edge = list_edges[cand_in];
+            Edge & in_edge = list_edges[cand_in];
             if (!is_connected(in_edge)) {
                 inner_update(cand_out, true);
                 return false;
             }
             inner_update(cand_in, true);
             update_outer_edges(cand_in, cand_out);
-            update_signals_on_add(in_edge, p_change_vertex.second);
-            update_signals_on_erase(list_edges[cand_out]);
+            update_signals_on_add(list_edges[cand_out], p_change_vertex.second);
+            update_signals_on_erase(in_edge);
             return true;
         } else {
             unsigned cur_in_out_size = inner.size() == 0 ? order : outer.size() + inner.size();
             bool erase = unirealdis(gen) < (1.0 * inner.size()) / cur_in_out_size;
-            cout << "erase: " << erase << endl;
             unsigned cand;
             if (erase) {
                 cand = inner.get(uniform_int_distribution<>(0, inner.size() - 1)(gen));
@@ -399,25 +418,19 @@ namespace mcmc {
             }
             inner_update(cand, erase);
             update_neighbours(cand, erase);
-            if (erase) {
-                update_signals_on_erase(list_edges[cand]);
-            } else {
-                update_signals_on_add(list_edges[cand], peeked_signal);
-            }
             unsigned new_in_out_size = inner.size() == 0 ? order : outer.size() + inner.size();
             pair<double, int> p_change_vertex = probability_on_change_vertex(cand, cur_in_out_size, new_in_out_size, erase);
             peeked_signal = p_change_vertex.second;
             if (gen_p < p_change_vertex.first) {
-                cout << "erase ?: ("+ to_string(erase) + ") edge" << endl;
+                if (erase) {
+                    update_signals_on_erase(list_edges[cand]);
+                } else {
+                    update_signals_on_add(list_edges[cand], peeked_signal);
+                }
                 return true;
             }
             inner_update(cand, !erase);
             update_neighbours(cand, !erase);
-            if (!erase) {
-                update_signals_on_erase(list_edges[cand]);
-            } else {
-                update_signals_on_add(list_edges[cand], peeked_signal);
-            }
             return false;
         }
     }
@@ -432,5 +445,9 @@ namespace mcmc {
 
     unordered_map<string, pair<double, int>>  const& Graph::get_signals() const {
         return signals;
+    }
+
+    int Graph::get_active_signal_by_edge(size_t e) {
+        return list_edges[e].active_signal;
     }
 };

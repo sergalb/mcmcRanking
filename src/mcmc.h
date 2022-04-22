@@ -14,7 +14,6 @@ namespace mcmc {
     using namespace std;
 
     class Graph {
-        const double edge_penalty;
         bool fixed_size;
         size_t order;
         vector<double> nodes;
@@ -40,6 +39,8 @@ namespace mcmc {
         vector<pair<size_t, bool>> bfsQueue;
 
         unordered_map<string, pair<double, int>> signals;
+        
+        const double edge_penalty;
 
         void update_outer_edges(unsigned cand_in, unsigned cand_out);
 
@@ -78,6 +79,8 @@ namespace mcmc {
 
         void set_nodes(Rcpp::NumericVector nodes);
 
+        void set_signals(vector<pair<string, double>> signals_value);
+
         bool next_iteration();
 
         void initialize_module(vector<size_t> const & edges);
@@ -89,6 +92,13 @@ namespace mcmc {
         vector <size_t> get_outer_edges();
         
         unordered_map<string, pair<double, int>> const& get_signals() const;
+
+        int get_active_signal_by_edge(size_t e);
+
+        //todo remove 
+        Edge const& get_edge(size_t e) {
+            return list_edges[e];
+        }
 
     };
     

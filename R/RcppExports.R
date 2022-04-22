@@ -21,10 +21,6 @@ mcmc_onelong_frequency_internal <- function(edgelist, signals, likelihood, fixed
     .Call('_mcmcRanking_mcmc_onelong_frequency_internal', PACKAGE = 'mcmcRanking', edgelist, signals, likelihood, fixed_size, module_size, start, niter, edge_penalty)
 }
 
-accessLOL <- function(l) {
-    .Call('_mcmcRanking_accessLOL', PACKAGE = 'mcmcRanking', l)
-}
-
 probabilistic_rank_internal <- function(edgelist, df_nodes) {
     .Call('_mcmcRanking_probabilistic_rank_internal', PACKAGE = 'mcmcRanking', edgelist, df_nodes)
 }

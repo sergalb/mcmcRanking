@@ -53,7 +53,7 @@ sample_subgraph <- function(graph, subgraph_order, niter, edge_penalty=0) {
   edgelist <- as_edgelist(graph, names = FALSE) - 1
   edgelist <- cbind(edgelist, E(graph)$signal)
   edgelist <- apply(edgelist, 1, as.list)
-  res <- sample_subgraph_internal(edgelist, getSignals(graph, 1), gorder(graph), subgraph_order, niter, edge_penalty) # nolint
+  res <- sample_subgraph_internal(edgelist, get_signals(graph, 0), gorder(graph), subgraph_order, niter, edge_penalty) # nolint
   return(E(graph)[which(res)])
 }
 
@@ -88,11 +88,11 @@ sample_llh <-
     edgelist <- apply(edgelist, 1, as.list)
 
     start_module <-
-      t(sample_subgraph_internal(edgelist, getSignals(graph, exp_lh), gorder(graph), subgraph_order, 1))
+      t(sample_subgraph_internal(edgelist, get_signals(graph, exp_lh), gorder(graph), subgraph_order, 1))
 
     llhs <-
       sample_llh_internal(edgelist,
-                          getSignals(graph, exp_lh),
+                          get_signals(graph, exp_lh),
                           V(graph)$likelihood^exp_lh,
                           niter,
                           fixed_order,
@@ -137,7 +137,7 @@ mcmc_sample <-
     edgelist <- as_edgelist(graph, names = FALSE) - 1
     edgelist <- cbind(edgelist, E(graph)$signal)
     edgelist <- apply(edgelist, 1, as.list)
-    signals <- getSignals(graph, exp_lh)
+    signals <- get_signals(graph, exp_lh)
     if (!missing(previous_mcmc)) {
       if (class(previous_mcmc) != "MCMC")
         stop("previous_mcmc must be class of \"MCMC\".")
@@ -239,9 +239,4 @@ mcmc_onelong_frequency <-
                                       niter)
     return(res)
   }
-
-getSignals <- function(graph, exp_lh) {
-  signals <- exp(graph$signals)
-  return(data.frame(names(signals), signals ^ exp_lh))
-}
 

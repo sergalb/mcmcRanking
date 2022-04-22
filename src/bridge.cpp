@@ -12,19 +12,8 @@ using namespace Rcpp;
 using namespace std;
 using mcmc::Graph;
 
-unordered_map<string, pair<double, int>> convert_signals_to_map(DataFrame signals) {
-    unordered_map<string, pair<double, int>> result;
-    StringVector signals_names = signals[0];
-    NumericVector signals_weights = signals[1];
-    for (size_t i = 0; i < signals_names.size(); ++i) {
-        result.emplace(signals_names[i], pair<double, int>(signals_weights[i], 0));
-    }
-    return result;
-}
-
 // [[Rcpp::export]]
 LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gorder, int module_size, size_t niter, double edge_penalty) {
-    // cout << endl << "start sample subgraph" << endl;
     RProgress::RProgress pb;
     if (niter > 0) {
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
@@ -93,15 +82,14 @@ void print_vec(vector<double> vec, string spliterator = " ") {
 
 
 // [[Rcpp::export]]
-LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatrix likelihood, bool fixed_size, size_t niter,
+NumericMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatrix likelihood, bool fixed_size, size_t niter,
                                    LogicalMatrix start_module, double edge_penalty) {
                                        cout << "start mcmc sample" << endl;
     Graph g = Graph((NumericVector) likelihood(_, 0), adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
-    cout<< "graph created" << endl;
     size_t order = edgelist.size();
     unsigned times = start_module.nrow();
     //LogicalVector ret(order * times, false);
-    LogicalMatrix ret(times, order);
+    NumericMatrix ret(times, order);
     // colnames(ret) = rownames(edgelist);
 
     RProgress::RProgress pb;
@@ -117,11 +105,10 @@ LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatr
             }
         }
         g.initialize_module(module);
-        for (int k = 0; k < likelihood.ncol(); ++k) {
-//            cout << "i: " << i << " k: " << k << " likelihood.size: " << ((NumericVector) likelihood(_, k)).size() << endl;
-            g.set_nodes((NumericVector) likelihood(_, k));
+        for (int k = 1; k < signals.ncol(); ++k) {
+            // cout << "set signals, k: " << k << " i: " << i << endl;
+            g.set_signals(get_signals_value(signals, k));
             for (size_t j = 0; j < niter; ++j) {
-                // cout << "j: " << j << endl;
                 g.next_iteration();
                 if (j % 10000 == 9999) {
                     Rcpp::checkUserInterrupt();
@@ -133,7 +120,7 @@ LogicalMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatr
         }
         for (size_t x : g.get_inner_edges()) {
             //ret[x + i * order] = true;
-            ret(i, x) = true;
+            ret(i, x) = g.get_active_signal_by_edge(x) + 1;
         }
     }
     return ret;

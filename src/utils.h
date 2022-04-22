@@ -20,5 +20,10 @@ vector<mcmc::Edge> adj_list(List edgelist);
 
 vector<vector<unsigned>> adj_list(IntegerMatrix edgelist, size_t gorder);
 
+unordered_map<string, pair<double, int>> convert_signals_to_map(DataFrame const& signals);
+
+vector<pair<string, double>> get_signals_value(DataFrame const& signals, size_t ind);
+
+
 
 #endif

@@ -12,9 +12,9 @@ namespace mcmc
         size_t second;
         vector<string> signals;
         size_t id;
-        int active_signal = -1;   
+        int active_signal;   
         Edge(size_t first, size_t second, vector<string> signals, size_t id);
-        string to_string();
+        string to_string() const;
     };
 }
 

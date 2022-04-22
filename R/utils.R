@@ -25,9 +25,13 @@ repetition_depth <- function(x) {
 
 get_exp_lh <- function(graph) {
   depth <- repetition_depth(exp(max(graph$signals)) / exp(min(graph$signals)))
-  return(1 / 2^depth)
+  return(1 / 2^(depth:0))
 }
 
+get_signals <- function(graph, exp_lh) {
+  signals <- exp(graph$signals)
+  return(data.frame(names(signals), outer(signals, exp_lh, "^")))
+}
 
 #' Frequency of vertices.
 #'
@@ -96,7 +100,8 @@ set_likelihood <- function(graph, fdr) {
 score_graph <- function(graph) {
   edge.table <- data.table(as_data_frame(graph, what = "edges"))
 
-  pvalsToFit <- edge.table[!is.na(pval)][!duplicated(signal), setNames(pval, signal)]
+  unlist_signals <- unique(unlist(E(graph)$signal))
+  pvalsToFit <- setNames(unlist(E(graph)$pval)[!duplicated(unlist_signals)], unlist_signals)
 
   edge.bum <- BioNet::fitBumModel(pvalsToFit[pvalsToFit > 0], plot = F)
   if (edge.bum$a > 0.5) {
@@ -104,13 +109,14 @@ score_graph <- function(graph) {
     warning("Edge scores have been assigned to 0 due to an inappropriate p-value distribution")
   } else {
     edge.threshold <- BioNet::fdrThreshold(0.1, edge.bum)
-    E(graph)$score <- with(edge.table,
-                       (edge.bum$a - 1) *
-                         (log(.replaceNA(pval, 1)) - log(edge.threshold)))
+    E(graph)$score <- lapply(edge.table[,pval], function(x)
+      (edge.bum$a - 1)
+        * (log(.replaceNA(x, 1)) - log(edge.threshold)))
   }
 
 
-  graph$signals <- setNames(E(graph)$score, E(graph)$signal)
+  graph$signals <- setNames(unlist(E(graph)$score), unlist(E(graph)$signal))
+  graph$signals <- graph$signals[!duplicated(graph$signals)]
   return(graph)
 
 }
