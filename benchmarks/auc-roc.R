@@ -4,11 +4,16 @@ library(gatom)
 library(devtools)
 library(igraph)
 library(data.table)
+library(mwcsr)
+load_all()
 
-simulate_data <- function(graph, alpha) {
+simulate_data <- function(graph, alpha, subgraph_order) {
+  if (is.null(E(graph)$signal)) {
+    E(graph)$signal <- E(graph)$label
+  }
   signals <- unique(unlist(E(graph)$signal))
   graph$signals <- setNames(rep(1, length(signals)), signals)
-  module <- sample_subgraph(graph, subgraph_order=100, niter=1)
+  module <- sample_subgraph(graph, subgraph_order=subgraph_order, niter=1)
   modules_signals <- lapply(unique(E(graph)$signal[module]), \(ms) sample(ms, 1))
   modules_signals <- unique(modules_signals)
   module_location <- signals %in% modules_signals
@@ -58,18 +63,74 @@ auc_roc_by_signal <- function (graph, mcmc, module_signals) {
   return(roc)
 }
 
-run_auc_roc <- function() {
-  load("data/gatom_graph.rda")
-  gs <- simplify(gatom_graph, remove.multiple = TRUE, edge.attr.comb="concat")
-  simulated <- simulate_data(gs, 0.1)
+run_auc_roc <- function(alpha, subgraph_order,  times, niter, edge_penalty, graph) {
+  gs <- simplify(graph, remove.multiple = TRUE, edge.attr.comb="concat")
+  simulated <- simulate_data(gs, alpha, subgraph_order)
   gs <- score_graph(simulated$graph)
   V(gs)$likelihood <- 1
 
 
-  mcs <- mcmc_sample(gs, times=30, niter=25000, exp_lh = get_exp_lh(gs), edge_penalty = 0.002)
+  mcs <- mcmc_sample(gs, times=times, niter=niter, exp_lh = get_exp_lh(gs), edge_penalty = edge_penalty)
   mcmc_score <- colSums(pmin(mcs$mat, 1))
   by_signal <- auc_roc_by_signal(gs, mcs, simulated$signals)
   by_edge <- auc_roc_by_edges(simulated$module, mcmc_score)
   return(list(by_edge=by_edge, by_signal=by_signal, simulated=simulated, mcmc=mcs, graph=gs))
 }
-# run_auc_roc()
+
+auc_roc_by_graph <- function (gs, res, signals) {
+  in_res <- unique(E(res)$signal)
+  not_module <- setdiff(unique(E(gs)), signals)
+  roc <- roc.curve(as.numeric(signals %in% in_res), as.numeric(not_module %in% in_res) , curve = TRUE)
+  return(roc)
+}
+
+rnc_auc_roc <- function() {
+  load("data/gatom_graph.rda")
+  gs <- simplify(gatom_simpl, remove.multiple = TRUE, edge.attr.comb="min")
+  simulated <- simulate_data(gs, 0.1)
+  gs <- scoreGraph(simulated$graph, k.gene=35, k.met=NULL)
+
+
+  solver <- rnc_solver()
+  solver_res <- solve_mwcsp(solver, gs)
+  m <- solver_res$graph
+
+  simulated$signals <- unique(E(gs)$signal[simulated$module])
+  auc <- auc_roc_by_graph(gs, m, simulated$signals)
+
+  return(list(auc=auc, simulated=simulated, solver_res=solver_res, graph=gs))
+}
+
+bench <- function(alphas, orders_penalties, times, niters, graphs) {
+  res <- list()
+  for (alpha in alphas) {
+    for (order_penalty in orders_penalties) {
+      for (time in times) {
+        for (niter in niters) {
+          for (graph_name in names(graphs)) {
+            auc <- run_auc_roc(alpha, order_penalty[[1]], time, niter, order_penalty[[2]], graphs[[graph_name]])
+            res <- c(res, setNames(list(auc), paste(graph_name, alpha, order_penalty[[1]], time, niter, order_penalty[[2]], sep="_")))
+          }
+        }
+      }
+    }
+  }
+  return(res)
+}
+
+experiments_table <- function(experiments) {
+  res <- do.call(rbind, lapply(experiments, function(organism) {
+    t(data.frame(
+      lapply(names(organism), function(name) {
+        experiment <- organism[[name]]
+       row <- append(stri_split(name, regex="_")[[1]], c(experiment$by_edge$auc, experiment$by_signal$auc))
+       return(row)
+      }
+    )))
+  }))
+  return(res)
+}
+
+# run_auc_roc(0.1, 100, graphs$kegg_mouse_metabolites)
+# rnc_auc_roc()
+# bench(c(0.1), c(50), c(1), c(20), list(kegg_hs_metabolites=graphs$kegg_hs_metabolites))

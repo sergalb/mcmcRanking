@@ -1,6 +1,7 @@
 #include <Rcpp.h>
 #include <vector>
 #include <queue>
+#include <type_traits>
 #include "utils.h"
 #include "edge.h"
 
@@ -9,9 +10,21 @@ using namespace std;
 
 vector<mcmc::Edge> adj_list(List edgelist) {
     vector<mcmc::Edge> edges;
+    // cout << "adj list" << endl;
     for (size_t i = 0; i < edgelist.size(); ++i) {
         List const& edge = edgelist[i];
-        edges.emplace_back(edge[0], edge[1], edge[2], i);
+        int from, to;
+        if (TYPEOF(edge[0]) != TYPEOF(edge[1])) throw domain_error("from and to had different types in edgelist");
+        if (TYPEOF(edge[0]) == STRSXP) {
+            string froms = edge[0];
+            string tos = edge[1];
+            from = stoi(froms);
+            to = stoi(tos);
+        } else if (TYPEOF(edge[0]) == REALSXP) {
+            from =edge[0];
+            to =edge[1];
+        }
+        edges.emplace_back(from, to, edge[2], i);
     }
     return edges;
 }

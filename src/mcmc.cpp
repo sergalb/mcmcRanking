@@ -298,7 +298,7 @@ namespace mcmc {
 
     pair<double, int> Graph::probability_on_change_vertex(size_t cand_in, size_t cand_out, size_t cur_size_outer, size_t new_size_outer) {
         vector<string> const& signals_out= list_edges[cand_out].signals;
-        size_t signal_out_ind = peek_signal(signals_out);
+        size_t signal_out_ind = uniform_int_distribution<>(0, signals_out.size() - 1)(gen);//peek_signal(signals_out);
         Edge const& in_edge = list_edges[cand_in];
         auto in_signal = signals[in_edge.signals[in_edge.active_signal]];
         auto out_signal = signals[signals_out[signal_out_ind]];
@@ -365,10 +365,8 @@ namespace mcmc {
             pair<double, int> p_change_vertex = probability_on_change_vertex(cand_in, cand_out, cur_size_outer, new_size_outer);
             if (gen_p >= p_change_vertex.first)
                 return false;
-            inner_update(cand_out, false);
             Edge & in_edge = list_edges[cand_in];
             if (!is_connected(in_edge)) {
-                inner_update(cand_out, true);
                 return false;
             }
             inner_update(cand_in, true);

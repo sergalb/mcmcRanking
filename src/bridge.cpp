@@ -19,6 +19,7 @@ LogicalVector sample_subgraph_internal(List edgelist, DataFrame signals, int gor
         pb = RProgress::RProgress("[:bar] ETA: :eta", niter);
         pb.tick(0);
     }
+    // cout << "start sample" << endl;
     vector<double> nodes(gorder, 1);
     Graph g = Graph(nodes, adj_list(edgelist), convert_signals_to_map(signals), true, edge_penalty);
     g.initialize_module(g.random_subgraph(module_size));
@@ -84,7 +85,7 @@ void print_vec(vector<double> vec, string spliterator = " ") {
 // [[Rcpp::export]]
 NumericMatrix mcmc_sample_internal(List edgelist, DataFrame signals, NumericMatrix likelihood, bool fixed_size, size_t niter,
                                    LogicalMatrix start_module, double edge_penalty) {
-                                       cout << "start mcmc sample" << endl;
+                                    //    cout << "start mcmc sample" << endl;
     Graph g = Graph((NumericVector) likelihood(_, 0), adj_list(edgelist), convert_signals_to_map(signals), fixed_size, edge_penalty);
     size_t order = edgelist.size();
     unsigned times = start_module.nrow();

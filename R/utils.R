@@ -105,7 +105,7 @@ score_graph <- function(graph) {
 
   edge.bum <- BioNet::fitBumModel(pvalsToFit[pvalsToFit > 0], plot = F)
   if (edge.bum$a > 0.5) {
-    E(graph)$score <- 0
+    E(graph)$score <-  lapply(edge.table[,pval], function(x) x * 0)
     warning("Edge scores have been assigned to 0 due to an inappropriate p-value distribution")
   } else {
     edge.threshold <- BioNet::fdrThreshold(0.1, edge.bum)
@@ -114,32 +114,40 @@ score_graph <- function(graph) {
         * (log(.replaceNA(x, 1)) - log(edge.threshold)))
   }
 
-
+  V(graph)$score <- 0
+  V(graph)$signal <- ""
   graph$signals <- setNames(unlist(E(graph)$score), unlist(E(graph)$signal))
   graph$signals <- graph$signals[!duplicated(graph$signals)]
+  # graph$signals <- c(graph$signals, setNames(0, ""))
   return(graph)
 
 }
 
 
-get_gatom_graph <- function() {
+get_gatom_graph <- function(keep.parallel=TRUE,
+                            anno_link = "http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Mm.eg.gatom.anno.rds",
+                            topology="metabolites") {
   network <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/network.kegg.rds"))
-  org.Mm.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Mm.eg.gatom.anno.rds"))
+  org.Mm.eg.gatom.anno <- readRDS(url(anno_link))
   # org.Hs.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Hs.eg.gatom.anno.rds"))
   met.db <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/met.kegg.db.rds"))
-  library(R.utils)
-  library(data.table)
-  met.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.met.de.tsv.gz")
-  gene.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.gene.de.tsv.gz")
+  # met.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.met.de.tsv.gz")
+  # gene.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.gene.de.tsv.gz")
   g <- makeMetabolicGraph(network = network,
-                          topology = "metabolites",
+                          topology = topology,
                           org.gatom.anno = org.Mm.eg.gatom.anno,
-                          gene.de = gene.de.raw,
+                          gene.de = NULL,
                           met.db = met.db,
-                          met.de = met.de.raw)
+                          met.de = NULL,
+                          keep.parallel=keep.parallel)
   return(g)
 }
 
+save_gatom_graph <- function () {
+  gatom_parallel <- get_gatom_graph(TRUE)
+  gatom_simpl <- get_gatom_graph(FALSE)
+  save(gatom_parallel, gatom_simpl, file="./data/gatom_graph.rda")
+}
 
 .replaceNA <- function(x, y) { ifelse(is.na(x), y, x) }
 
