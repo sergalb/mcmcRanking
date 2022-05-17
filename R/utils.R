@@ -131,14 +131,14 @@ get_gatom_graph <- function(keep.parallel=TRUE,
   org.Mm.eg.gatom.anno <- readRDS(url(anno_link))
   # org.Hs.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Hs.eg.gatom.anno.rds"))
   met.db <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/met.kegg.db.rds"))
-  # met.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.met.de.tsv.gz")
-  # gene.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.gene.de.tsv.gz")
+  met.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.met.de.tsv.gz")
+  gene.de.raw <- fread("http://artyomovlab.wustl.edu/publications/supp_materials/GAM/Ctrl.vs.MandLPSandIFNg.gene.de.tsv.gz")
   g <- makeMetabolicGraph(network = network,
                           topology = topology,
                           org.gatom.anno = org.Mm.eg.gatom.anno,
-                          gene.de = NULL,
+                          gene.de = gen.de.raw,
                           met.db = met.db,
-                          met.de = NULL,
+                          met.de = met.de.raw,
                           keep.parallel=keep.parallel)
   return(g)
 }
