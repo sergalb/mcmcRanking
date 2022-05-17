@@ -5,7 +5,31 @@ library(devtools)
 library(igraph)
 library(data.table)
 library(mwcsr)
+library(stringi)
 load_all()
+
+simulate_data_for_simpl_graphs <- function(graph, alpha, subgraph_order) {
+  gs <- simplify(graph, remove.multiple = TRUE, edge.attr.comb="concat")
+  gs_simple <- simplify(graph, remove.multiple = TRUE, edge.attr.comb="min")
+  if (is.null(E(gs)$signal)) {
+    E(gs)$signal <- E(gs)$label
+    E(gs_simple)$signal <- E(gs_simple)$label
+
+  }
+  signals <- unique(unlist(E(gs)$signal))
+  gs$signals <- setNames(rep(1, length(signals)), signals)
+  module <- sample_subgraph(gs, subgraph_order=subgraph_order, niter=1)
+  modules_signals <- lapply(unique(E(gs)$signal[module]), \(ms) sample(ms, 1))
+  modules_signals <- unique(modules_signals)
+  module_location <- signals %in% modules_signals
+  gs$signals[module_location] <- rbeta(length(modules_signals), alpha, 1)
+  gs$signals[!module_location] <- runif(length(signals) - length(modules_signals), 0, 1)
+
+  E(gs_simple)$pval <- sapply(E(gs_simple)$signal,
+                          function(s_name) as.numeric(gs$signals[s_name]))
+
+  return(list("module" = module, "graph" = gs_simple, "signals" = modules_signals))
+}
 
 simulate_data <- function(graph, alpha, subgraph_order) {
   if (is.null(E(graph)$signal)) {
@@ -45,18 +69,22 @@ split_signals <- function(matrix, signals) {
   return(do.call("cbind", splited)[seq_len(nrow(matrix)),])
 }
 
-auc_roc_by_signal <- function (graph, mcmc, module_signals) {
-  groupsN <- as.integer(factor(unlist(E(graph)$signal)))
+prob_by_mcmc <- function (graph, mcmc, signal_selector) {
+  groupsN <- as.integer(factor(unlist(signal_selector(E(graph)))))
 
   x <- Matrix::sparseMatrix(j=seq_along(groupsN),
                           i=groupsN,
                           x=rep(1, length(groupsN)))
 
-  z <- x %*% t(split_signals(mcmc$mat, E(graph)$signal))
+  z <- x %*% t(split_signals(mcmc$mat, signal_selector(E(graph))))
   z1 <- pmin(z, 1)
-  rownames(z1) <- levels(factor(unlist(E(graph)$signal)))
+  rownames(z1) <- levels(factor(unlist(signal_selector(E(graph)))))
 
-  prob <- rowMeans(z1)
+  return(rowMeans(z1))
+}
+
+auc_roc_by_signal <- function (graph, mcmc, module_signals) {
+  prob <- prob_by_mcmc(graph, mcmc, \(edges) edges$signal)
 
   not_module <- names(graph$signals)[!(names(graph$signals) %in% module_signals)]
   roc <- roc.curve(prob[unlist(module_signals)], prob[not_module], curve = TRUE)
@@ -77,18 +105,19 @@ run_auc_roc <- function(alpha, subgraph_order,  times, niter, edge_penalty, grap
   return(list(by_edge=by_edge, by_signal=by_signal, simulated=simulated, mcmc=mcs, graph=gs))
 }
 
-auc_roc_by_graph <- function (gs, res, signals) {
+roc_point <- function (gs, res, signals) {
   in_res <- unique(E(res)$signal)
-  not_module <- setdiff(unique(E(gs)), signals)
-  roc <- roc.curve(as.numeric(signals %in% in_res), as.numeric(not_module %in% in_res) , curve = TRUE)
-  return(roc)
+  tp <- sum(in_res %in% signals)
+  fp <- length(in_res) - tp
+  p <- length(signals)
+  n <- length(unique(E(gs)$signal)) - length(signals)
+  return(list(x=fp/n, y=tp/p))
 }
 
-rnc_auc_roc <- function() {
-  load("data/gatom_graph.rda")
-  gs <- simplify(gatom_simpl, remove.multiple = TRUE, edge.attr.comb="min")
-  simulated <- simulate_data(gs, 0.1)
-  gs <- scoreGraph(simulated$graph, k.gene=35, k.met=NULL)
+rnc_roc_point <- function(alpha, subgraph_order, k.gene, edge.threshold.min=1, graph) {
+  gs <- simplify(graph, remove.multiple = TRUE, edge.attr.comb="min")
+  simulated <- simulate_data(gs, alpha, subgraph_order)
+  gs <- scoreGraph(simulated$graph, k.gene=k.gene, edge.threshold.min=edge.threshold.min, k.met=NULL)
 
 
   solver <- rnc_solver()
@@ -96,9 +125,24 @@ rnc_auc_roc <- function() {
   m <- solver_res$graph
 
   simulated$signals <- unique(E(gs)$signal[simulated$module])
-  auc <- auc_roc_by_graph(gs, m, simulated$signals)
+  point <- roc_point(gs, m, simulated$signals)
 
-  return(list(auc=auc, simulated=simulated, solver_res=solver_res, graph=gs))
+  return(list(point=point, simulated=simulated, solver_res=solver_res, graph=gs))
+}
+
+virgo_cplex_roc_point <- function(alpha, subgraph_order, k.gene, threads = 4, edge.threshold.min=1, graph) {
+  simulated <- simulate_data_for_simpl_graphs(graph, alpha, subgraph_order)
+  gs <- scoreGraph(simulated$graph, k.gene=k.gene, edge.threshold.min=edge.threshold.min, k.met=NULL)
+
+
+  vsolver <- virgo_solver(cplex_jar="/Applications/CPLEX_Studio221/cplex/lib/cplex.jar", cplex_bin="/Applications/CPLEX_Studio221/cplex/bin/x86-64_osx/libcplex2210.dylib",  threads=threads, penalty=0.001)
+  sol <- solve_mwcsp(vsolver, gs)
+  m <- sol$graph
+
+  simulated$signals <- unique(E(gs)$signal[simulated$module])
+  point <- roc_point(gs, m, simulated$signals)
+
+  return(list(point=point, simulated=simulated, solver_res=sol, graph=gs))
 }
 
 bench <- function(alphas, orders_penalties, times, niters, graphs) {
@@ -118,19 +162,60 @@ bench <- function(alphas, orders_penalties, times, niters, graphs) {
   return(res)
 }
 
-experiments_table <- function(experiments) {
-  res <- do.call(rbind, lapply(experiments, function(organism) {
-    t(data.frame(
-      lapply(names(organism), function(name) {
-        experiment <- organism[[name]]
-       row <- append(stri_split(name, regex="_")[[1]], c(experiment$by_edge$auc, experiment$by_signal$auc))
-       return(row)
-      }
-    )))
-  }))
-  return(res)
+table_from_experiment <- function(experiment) {
+  t(data.frame(
+    lapply(names(experiment), function(name) {
+      experiment_iter <- experiment[[name]]
+      append(stri_split(name, regex="_")[[1]], c(experiment_iter$by_edge$auc, experiment_iter$by_signal$auc, mean(rowSums(experiment_iter$mcmc$mat))))
+    }
+  )))
 }
 
+experiments_table <- function(experiments, postprocess=identity) {
+  res <- do.call(rbind, lapply(experiments, table_from_experiment))
+  return(postprocess(res))
+}
+
+remove_kegg_add_const_colnames <- function (table) {
+  res <- table[,-1]
+  colnames(res) <- c("organism", "topology", "alpha", "module_order", "mcmc_times", "mcmc_niter", "auc_by_edge", "auc_by_signal")
+  rownames(res) <- seq_len(nrow(res))
+  res
+}
+
+remove_kegg_add_pen_colnames <- function (table) {
+  res <- table[,-1]
+  colnames(res) <- c("organism", "topology", "alpha", "module_order", "mcmc_times", "mcmc_niter", "edge_penalty", "auc_by_edge", "auc_by_signal", "mean_result_module_order")
+  rownames(res) <- seq_len(nrow(res))
+  res
+}
+
+
+check_pathways <- function (graph, mcmc, size) {
+  org.Mm.eg.gatom.anno <- readRDS(url("http://artyomovlab.wustl.edu/publications/supp_materials/GATOM/org.Mm.eg.gatom.anno.rds"))
+  genes_prob <- prob_by_mcmc(graph, mcmc, \(edges) edges$gene)
+  module_genes <- names(genes_prob)[tail(order(genes_prob),size)]
+  foraRes <- fgsea::fora(pathways=org.Mm.eg.gatom.anno$pathways,
+                       genes=module_genes,
+                       universe=unique(unlist(E(graph)$gene)),
+                       minSize=5)
+  return(foraRes)
+}
+
+plot_auc_roc_with_points <- function(auc_roc, points) {
+  plot(x=1,
+       xlab="FPR",
+       ylab="TPR",
+       xlim = c(0,1),
+       ylim=c(0,1),
+       type="l",
+       main=paste("ROC curve\nAUC = ", format(round(auc_roc$auc, 5), nsmall = 5), sep=""))
+  auc_points <- auc_roc$curve[,-3]
+  lines(x=auc_points[,1], y=auc_points[,2], lwd=2, col=2, t="l")
+  points(lapply(points, \(x) x[[1]]), lapply(points, \(x) x[[2]]), pch =16,col = 3)
+  legend("bottomright", legend = c("MCMC", "GATOM"),
+       col = c(2, 3), lty = c(1,NA), lwd=2, pch=c(NA,16))
+
+}
 # run_auc_roc(0.1, 100, graphs$kegg_mouse_metabolites)
 # rnc_auc_roc()
-# bench(c(0.1), c(50), c(1), c(20), list(kegg_hs_metabolites=graphs$kegg_hs_metabolites))

@@ -228,7 +228,7 @@ namespace mcmc {
         
         if (is_erased) {
             inner.erase(e);
-            Edge edge = list_edges[e];
+            Edge const& edge = list_edges[e];
             auto v1 = find_if(neis[edge.first].begin(), neis[edge.first].end(), [&edge](pair<size_t, size_t> const& nei) { return edge.second == nei.first; } );
             if (v1 == neis[edge.first].end()) {
                 for (auto const& nei : neis[edge.first]) {
@@ -330,7 +330,7 @@ namespace mcmc {
 
         auto signal = signals[cand_edge.signals[signal_ind]];
 
-        //erase == 1 -> (signal.second == 1) - last edge activate signal; erase == 0 -> (signal.second == 0) no edges activate signal
+        //erase == 1 -> (signal.second (count signals in current graph) == 1) - last edge activate signal; erase == 0 -> (signal.second == 0) no edges activate signal
         double likelihood = (signal.second == erase) ? signal.first : 1;
         
         return {((erase ? 1 / likelihood : likelihood) * cur_size / new_size) * size_penalty * multisignals_penalty, signal_ind};
