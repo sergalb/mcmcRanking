@@ -56,7 +56,7 @@ namespace mcmc {
     }
 
     vector<size_t> Graph::random_subgraph(size_t size) {
-        // cout << endl << "start random subgraph" << endl;
+        //  cout << endl << "start random subgraph" << endl;
         if (size == 0) {
             return vector<size_t>();
         }
@@ -147,10 +147,11 @@ namespace mcmc {
         bfsUsed[erased.second] = {true, 1};
         bfsQueue.emplace_back(erased.first, 0);
         bfsQueue.emplace_back(erased.second, 1);
-
+        int count[2] = {1,1};
         bool connected = false;
         for (size_t i = 0; i < bfsQueue.size(); ++i) {
             auto v = bfsQueue[i];
+            count[v.second]--;
             // cout << "v: " << v << endl;
             for (auto const& tov : neis[v.first]) {
                 auto to = tov.first;
@@ -162,10 +163,11 @@ namespace mcmc {
                     } else continue;
                 } 
                 bfsQueue.emplace_back(to, v.second);
+                count[v.second]++;
                 bfsUsed[to] = {1, v.second};
                 
             }
-            if (connected) break;
+            if (connected || count[0] == 0 || count[1] == 0) break;
         }
         inner_update(erased.id, false);
         return connected;
@@ -325,15 +327,38 @@ namespace mcmc {
         } else {
             signal_ind = uniform_int_distribution<>(0, cand_edge.signals.size() - 1)(gen);
         }
-        double multisignals_penalty = erase ? 1 : 1 / (log(exp(1) - 1 + cand_edge.signals.size()));
-        double size_penalty = (erase ? 1/edge_penalty : edge_penalty);
 
         auto signal = signals[cand_edge.signals[signal_ind]];
 
-        //erase == 1 -> (signal.second (count signals in current graph) == 1) - last edge activate signal; erase == 0 -> (signal.second == 0) no edges activate signal
-        double likelihood = (signal.second == erase) ? signal.first : 1;
         
-        return {((erase ? 1 / likelihood : likelihood) * cur_size / new_size) * size_penalty * multisignals_penalty, signal_ind};
+        double multisignals_penalty = 1;
+        double size_penalty = 1;
+        double likelihood = 1;
+        double sizes_relation = (double)cur_size/ (double)new_size;
+        if (erase) {
+            likelihood = (signal.second == 1) ? 1.0/signal.first : 1;
+            size_t new_signal_ind = uniform_int_distribution<>(0, cand_edge.signals.size() - 1)(gen);
+            if (signal_ind != new_signal_ind) {
+                auto new_signal = signals[cand_edge.signals[new_signal_ind]];
+                likelihood *= (new_signal.second == 0) ? new_signal.first : 1;
+                sizes_relation = 1;
+                signal_ind = new_signal_ind;
+            } else {
+                size_penalty = 1.0 / edge_penalty;
+                signal_ind = -1;
+            }
+        } else {
+
+            likelihood = (signal.second == 0) ? signal.first : 1;
+            size_penalty = edge_penalty;
+//            multisignals_penalty = 1.0 / cand_edge.signals.size();
+        }
+        double res = likelihood * sizes_relation * size_penalty * multisignals_penalty;
+        if (cand_edge.signals.size() != 1) {
+                // cout << "signal: " << signal_ind << " erase: " << erase << ", signals size: " << cand_edge.signals.size() << ", multisignals penalty: " << multisignals_penalty << ", res: " << res << endl;
+            }
+        
+        return {likelihood * sizes_relation * size_penalty, signal_ind};
     }
 
     bool Graph::next_iteration() {
@@ -386,7 +411,7 @@ namespace mcmc {
                        outer.get(uniform_int_distribution<>(0, outer.size() - 1)(gen));
             }
             double gen_p = unirealdis(gen);
-            int peeked_signal;
+        
             if (erase) {
                 int new_in_out_size = inner.size() + outer.size() - edge_neighbours_size(cand) + in_nei_c[cand];
                 if (inner.size() == 1) {
@@ -398,18 +423,21 @@ namespace mcmc {
                     throw domain_error("count of innner and outer edges less then count outer neighbours of some edge");
                 }
                 pair<double, int> p_change_vertex = probability_on_change_vertex(cand, cur_in_out_size, new_in_out_size, true);
-                peeked_signal = p_change_vertex.second;
+                int peeked_signal = p_change_vertex.second;
                 if (gen_p >= p_change_vertex.first) {
                     return false;
                 }
-
+                if (peeked_signal != -1) {
+                    update_signals_on_erase(list_edges[cand]);
+                    update_signals_on_add(list_edges[cand], peeked_signal);
+                    return true;
+                }
                 if (!is_connected(list_edges[cand])) {
                     return false;
                 }
             } else {
                 double estimation = (inner.size() == 0 ? 1.0 * order / (1 + edge_neighbours_size(cand)) : 1);
                 pair<double, int> p_change_vertex = probability_on_change_vertex(cand, estimation, 1, false);
-                peeked_signal = p_change_vertex.second;
                 if (gen_p >= p_change_vertex.first) {
                     return false;
                 }
@@ -418,12 +446,11 @@ namespace mcmc {
             update_neighbours(cand, erase);
             unsigned new_in_out_size = inner.size() == 0 ? order : outer.size() + inner.size();
             pair<double, int> p_change_vertex = probability_on_change_vertex(cand, cur_in_out_size, new_in_out_size, erase);
-            peeked_signal = p_change_vertex.second;
             if (gen_p < p_change_vertex.first) {
                 if (erase) {
                     update_signals_on_erase(list_edges[cand]);
                 } else {
-                    update_signals_on_add(list_edges[cand], peeked_signal);
+                    update_signals_on_add(list_edges[cand], p_change_vertex.second);
                 }
                 return true;
             }

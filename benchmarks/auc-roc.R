@@ -203,19 +203,44 @@ check_pathways <- function (graph, mcmc, size) {
 }
 
 plot_auc_roc_with_points <- function(auc_roc, points) {
+  par(mar=c(6,7,6,3))
   plot(x=1,
        xlab="FPR",
        ylab="TPR",
        xlim = c(0,1),
        ylim=c(0,1),
        type="l",
-       main=paste("ROC curve\nAUC = ", format(round(auc_roc$auc, 5), nsmall = 5), sep=""))
+       main=paste("ROC curve\nAUC = ", format(round(auc_roc$auc, 5), nsmall = 5), sep=""),
+       cex.lab = 3,
+     cex.axis = 3,
+     cex.main = 3,
+     cex.sub = 3)
   auc_points <- auc_roc$curve[,-3]
-  lines(x=auc_points[,1], y=auc_points[,2], lwd=2, col=2, t="l")
-  points(lapply(points, \(x) x[[1]]), lapply(points, \(x) x[[2]]), pch =16,col = 3)
+  lines(x=auc_points[,1], y=auc_points[,2], lwd=4, col=2, t="l", )
+  points(lapply(points, \(x) x[[1]]), lapply(points, \(x) x[[2]]), pch =16, cex = 2, col = 3)
   legend("bottomright", legend = c("MCMC", "GATOM"),
-       col = c(2, 3), lty = c(1,NA), lwd=2, pch=c(NA,16))
+       col = c(2, 3), lty = c(1,NA), lwd=4, pch=c(NA,16), cex=3, pt.cex = 3)
 
 }
+plot_auc_roc<- function(auc_roc) {
+  par(mar=c(6,7,6,3))
+  plot(x=1,
+       xlab="FPR",
+       ylab="TPR",
+       xlim = c(0,1),
+       ylim=c(0,1),
+       type="l",
+       main=paste("ROC curve\nAUC = ", format(round(auc_roc$auc, 5), nsmall = 5), sep=""),
+       cex.lab = 3,
+     cex.axis = 3,
+     cex.main = 3,
+     cex.sub = 3)
+  auc_points <- auc_roc$curve[,-3]
+  lines(x=auc_points[,1], y=auc_points[,2], lwd=4, col=2, t="l", )
+  legend("bottomright", legend = c("MCMC"),
+       col = c(2), lty = c(1), lwd=4, cex=3)
+
+}
+# run_auc_roc(0.05, 100, 30, 25000, 1, graphs$kegg_mouse_metabolites)
 # run_auc_roc(0.1, 100, graphs$kegg_mouse_metabolites)
 # rnc_auc_roc()
